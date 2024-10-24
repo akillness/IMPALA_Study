@@ -17,12 +17,12 @@ import gym
 
 # Define the Actor-Critic Network # 끝
 class ActorCritic(nn.Module):
-    # def __init__(self, input_dim, action_dim):
-    def __init__(self, action_dim):
+    def __init__(self, input_dim, action_dim):
+    # def __init__(self, action_dim):
         super(ActorCritic, self).__init__()
-        # self.fc = nn.Linear(input_dim, 128)
-        self.actor = nn.Linear(256, action_dim)
-        self.critic = nn.Linear(256, 1)
+        self.fc = nn.Linear(input_dim, 128)
+        self.actor = nn.Linear(128, action_dim)
+        self.critic = nn.Linear(128, 1)
 
     # def forward(self, x):
     #     x = torch.relu(self.fc(x))
@@ -31,6 +31,7 @@ class ActorCritic(nn.Module):
     #     return policy_dist, value
     
     def forward(self, x):
+        x = torch.relu(self.fc(x))
         value = self.critic(x)
         logits = self.actor(x)
         return logits, value
@@ -42,7 +43,7 @@ class IMPALA(nn.Module):
         self.batch_size = batch_size
         self.lstm = nn.LSTMCell(hidden_size + action_size + 1, 256)
         # self.lstm = nn.LSTM(input_dim, hidden_dim, batch_first=True)
-        self.policy = ActorCritic(input_dim, action_size).to(device)
+        self.policy = ActorCritic( action_size).to(device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
 
         self.fc = nn.Linear(3136, hidden_size)
@@ -76,6 +77,14 @@ class IMPALA(nn.Module):
 
         # return logits,values
         return logits.view(traj_len, -1, batch_size), values.view(traj_len, batch_size)
+    
+    def save_model(self, path):
+        torch.save(self.policy.state_dict(), path)
+
+    def load_model(self, path):
+        self.policy.load_state_dict(torch.load(path))
+        self.policy.eval()
+
     '''
     def get_action(self, state):
         logits, _ = self.model(state)
@@ -113,7 +122,7 @@ class Actor:
         self.n_steps = n_steps
         self.device = device
         self.trajectory = []
-        self.policy = ActorCritic(input_dim, action_size).to(device)
+        self.policy = ActorCritic(action_size).to(device)
         self.lstm = nn.LSTMCell(hidden_size + action_size + 1, 256)
         
         # self.model = IMPALA(action_size=action_size,device=device,learning_rate=)
@@ -151,6 +160,8 @@ class Actor:
             # rollout.append(obs, last_action, reward, done, logits.detach())
             # steps += 1
         return trajectory
+    
+    
 
 # Learner class to update the policy
 class Learner:
@@ -186,12 +197,7 @@ class Learner:
         self.writer.add_scalar('Loss/Policy', policy_loss_total / len(trajectories), global_step)
         self.writer.add_scalar('Loss/Value', value_loss_total / len(trajectories), global_step)
 
-    def save_model(self, path):
-        torch.save(self.policy.state_dict(), path)
-
-    def load_model(self, path):
-        self.policy.load_state_dict(torch.load(path))
-        self.policy.eval()
+    
 
 # Example usage
 if __name__ == "__main__":
@@ -202,6 +208,7 @@ if __name__ == "__main__":
     
     # env.reset() 
     # ㄴ Cart Position, Cart Velocity, Pole Angle, Pole Angle Velocity
+
     input_dim = env.observation_space.shape[0]
     action_dim = env.action_space.n
     batch_size = 32
@@ -210,7 +217,7 @@ if __name__ == "__main__":
     
     # env.reset()
     global_step = 0
-    for episode in tqdm(range(10001)):
+    for episode in tqdm(range(1000)):
         # env.render()
         trajectory = actor.generate_trajectory()
         learner.update_policy([trajectory], global_step)

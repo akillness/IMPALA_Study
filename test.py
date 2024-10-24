@@ -85,6 +85,7 @@ def actor(idx, ps, data, env, args):
     # save_path = args.save_path
     # load_path = args.load_path
     env.start()
+    
     """Run the env for n steps and return a trajectory rollout."""
     obs = env.reset()
     hx = init_hx
