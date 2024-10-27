@@ -23,7 +23,7 @@ class Agent(threading.Thread):
             activation=config.activation,
             final_activation=config.final_activation,
             hidden=config.hidden,
-            coef=config.entropy_coef,
+            entropy_coef=config.entropy_coef,
             reward_clip=reward_clip
         )
         self.global_to_local = utils.copy_src_to_dst('global', name)

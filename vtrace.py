@@ -3,7 +3,34 @@ import torch.nn as nn
 import torch.optim as optim
 
 import torch.nn.functional as F
+'''
+Target Policy
+Target policy는 학습자(Learner)가 최적화하려는 정책입니다. 
+이는 에이전트가 궁극적으로 따르기를 원하는 정책으로, 학습 과정에서 지속적으로 업데이트됩니다. 
+Target policy는 학습자가 수집한 데이터를 기반으로 가치 함수와 정책을 업데이트하는 데 사용됩니다. 
+이 정책은 주로 학습자의 신경망 파라미터로 표현됩니다
 
+Local Policy
+Local policy는 각 액터(actor)가 환경과 상호작용할 때 사용하는 정책입니다. 
+IMPALA에서는 여러 액터가 병렬로 환경과 상호작용하며 데이터를 수집합니다. 
+이때 각 액터는 자신의 로컬 정책(local policy)을 따릅니다. 
+로컬 정책은 주기적으로 학습자의 타겟 정책으로부터 업데이트되지만, 항상 최신 상태는 아닐 수 있습니다. 
+이는 분산 학습에서 발생하는 지연(latency) 때문입니다
+
+Behaviour Policy
+행동 정책은 에이전트가 환경에서 어떤 행동을 선택할지를 결정하는 정책입니다. 
+IMPALA에서는 여러 개의 액터(actor)가 환경과 상호작용하며 데이터를 수집합니다. 
+이 액터들은 행동 정책을 따르며, 이 정책은 학습자(learner)에 의해 주기적으로 업데이트됩니다. 
+행동 정책은 주로 탐험(exploration)과 활용(exploitation) 사이의 균형을 맞추기 위해 설계됩니다.
+
+Value Function
+가치 함수는 특정 상태에서의 기대 보상을 추정하는 함수입니다. 
+IMPALA에서는 V-trace라는 오프-폴리시(off-policy) 보정 방법을 사용하여 가치 함수를 추정합니다. 
+V-trace는 액터들이 수집한 데이터를 학습자가 효과적으로 사용할 수 있도록 도와줍니다. 
+이를 통해 학습자는 더 안정적이고 효율적으로 학습할 수 있습니다.
+
+
+'''
 # def compute_delta_v(value_function, state, next_state, reward, gamma, rho):
 #     """
 #     Compute the temporal difference delta V.
@@ -76,24 +103,6 @@ import torch.nn.functional as F
 
 #     return v_trace_target
 
-# # Example usage
-# def value_function(states):
-#     # Placeholder for the actual value function
-#     return torch.zeros(len(states))
-
-# class ValueNetwork(nn.Module):
-#     def __init__(self, state_dim):
-#         super(ValueNetwork, self).__init__()
-#         self.fc1 = nn.Linear(state_dim, 128)
-#         self.fc2 = nn.Linear(128, 128)
-#         self.fc3 = nn.Linear(128, 1)
-    
-#     def forward(self, x):
-#         x = torch.relu(self.fc1(x))
-#         x = torch.relu(self.fc2(x))
-#         return self.fc3(x)
-
-
 def log_probs_from_logits_and_actions(policy_logits, actions):
     assert policy_logits.dim() == 3, "policy_logits should have rank 3"
     assert actions.dim() == 2, "actions should have rank 2"
@@ -159,7 +168,7 @@ def from_importance_weights(log_rhos, discounts, rewards, values, bootstrap_valu
                             clip_rho_threshold=1.0, clip_pg_rho_threshold=1.0):
 
     rhos = torch.exp(log_rhos) # rhos 의 최대 최소, 최대, 평균 구할수 있는 지점
-    
+
     if clip_rho_threshold is not None:
         clipped_rhos = torch.minimum(torch.tensor(clip_rho_threshold), rhos)
     else:

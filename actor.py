@@ -3,6 +3,13 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+import copy
+import numpy as np
+
+from impala import IMPALA
+
+from torch.utils.tensorboard import SummaryWriter
+
 '''
 가중치 ci는 Retrace에서의 "trace cutting" 계수와 유사합니다. 
 이들의 곱 cs . . . ct−1는 시간 t에서 관찰된 시간차 δtV가 이전 시간 s에서의 가치 함수 업데이트에 얼마나 영향을 미치는지를 측정합니다.
@@ -39,14 +46,45 @@ class ActorCritic(nn.Module):
         return action_probs, state_value
 
 class Actor:
-    def __init__(self, env, actor_critic, n_steps):
+    def __init__(self, env, n_steps, unroll):
         self.env = env
-        self.actor_critic = actor_critic
         self.n_steps = n_steps
-        self.local_policy = actor_critic
+        self.unroll = unroll
+        # if self.name == 'thread_0':
+        #     self.env = gym.wrappers.Monitor(self.env, 'save-mov', video_callable=lambda episode_id: episode_id%10==0)
+        state_dim = env.observation_space.shape[0]
+        action_dim = env.action_space.n
 
-    def update_local_policy(self):
-        self.local_policy = self.actor_critic
+        self.actor_critic = ActorCritic(state_dim,action_dim)
+        
+        self.global_policy =IMPALA(
+                                   state_shape=state_dim,
+                                   output_size=action_dim,
+                                   activation=nn.ReLU(),
+                                   final_activation=nn.Softmax(),
+                                   discount_factor=0.99,
+                                   lr=0.001,
+                                   hidden=256,
+                                   entropy_coef=0.01,
+                                   reward_clip=['tanh','abs_one','no_clip'],
+                                   unroll=unroll # figure 2
+                                   )
+        
+        self.local_policy = IMPALA(
+                                   state_shape=state_dim,
+                                   output_size=action_dim,
+                                   activation=nn.ReLU(),
+                                   final_activation=nn.Softmax(),
+                                   discount_factor=0.99,
+                                   lr=0.001,
+                                   hidden=256,
+                                   entropy_coef=0.01,
+                                   reward_clip=['tanh','abs_one','no_clip'],
+                                   unroll=unroll # figure 2
+                                   )
+
+    # def update_local_policy(self):
+    #     self.local_policy = self.actor_critic
 
     def generate_trajectory(self):
         state,info = self.env.reset()
@@ -64,4 +102,82 @@ class Actor:
                 break
         return trajectory
     
-    
+    def run(self):
+        # self.env = self.gym.make('PongDeterministic-v4')        
+        
+        done = False
+        obs, info = self.env.reset()
+        history = np.stack((obs, obs, obs, obs), axis=2)
+        state = copy.deepcopy(history)
+        episode = 0
+        score = 0
+        episode_step = 0
+        total_max_prob = 0
+        loss_step = 0
+
+        writer = SummaryWriter('runs/' + self.name)
+
+        while True:
+            loss_step += 1
+            episode_state = []
+            episode_next_state = []
+            episode_reward = []
+            episode_done = []
+            episode_action = []
+            episode_behavior_policy = []
+            for i in range(128):
+                action, behavior_policy, max_prob = self.local_policy.policy_and_action(state)
+
+                episode_step += 1
+                total_max_prob += max_prob
+            
+                obs, reward, done, _ = self.env.step(action + 1)
+                # obs = utils.pipeline(obs)
+                history[:, :, :-1] = history[:, :, 1:]
+                history[:, :, -1] = obs
+                next_state = copy.deepcopy(history)
+
+                score += reward
+
+                d = False
+                if reward == 1 or reward == -1:
+                    d = True
+
+                episode_state.append(state)
+                episode_next_state.append(next_state)
+                episode_reward.append(reward)
+                episode_done.append(d)
+                episode_action.append(action)
+                episode_behavior_policy.append(behavior_policy)
+
+                state = next_state
+
+                if done:
+                    print(self.name, episode, score, total_max_prob / episode_step, episode_step)
+                    writer.add_scalar('score', score, episode)
+                    writer.add_scalar('max_prob', total_max_prob / episode_step, episode)
+                    writer.add_scalar('episode_step', episode_step, episode)
+                    episode_step = 0
+                    total_max_prob = 0
+                    episode += 1
+                    score = 0
+                    done = False
+                    if self.name == 'thread_0':
+                        self.env.close()
+                    obs,info = self.env.reset()
+                    # obs = utils.pipeline(obs)
+                    history = np.stack((obs, obs, obs, obs), axis=2)
+                    state = copy.deepcopy(history)
+
+            pi_loss, value_loss, entropy = self.global_network.train(
+                state=np.stack(episode_state),
+                next_state=np.stack(episode_next_state),
+                reward=np.stack(episode_reward),
+                done=np.stack(episode_done),
+                action=np.stack(episode_action),
+                behavior_policy=np.stack(episode_behavior_policy))
+            
+            # self.global_to_local()
+            writer.add_scalar('pi_loss', pi_loss, loss_step)
+            writer.add_scalar('value_loss', value_loss, loss_step)
+            writer.add_scalar('entropy', entropy, loss_step)

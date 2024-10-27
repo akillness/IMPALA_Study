@@ -3,9 +3,19 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 
+import loss_func
+
+
 class IMPALA(nn.Module):
     def __init__(self, state_shape, output_size, activation, final_activation, hidden, coef, reward_clip, unroll):
         super(IMPALA, self).__init__()
+
+        self.device = "cpu"
+        if torch.mps.is_available():
+            self.device = "mps"
+        elif torch.cuda.is_available():
+            self.device = "cuda"
+        
         self.state_shape = state_shape
         self.output_size = output_size
         self.activation = activation
@@ -22,6 +32,64 @@ class IMPALA(nn.Module):
 
         self.policy_net, self.value_net = self.build_model()
         self.optimizer = optim.RMSprop(self.parameters(), lr=self.lr, eps=0.01, momentum=0.0, alpha=0.99)
+
+
+        self.state_shape = state_shape
+        self.output_size = output_size
+        self.activation = activation
+        self.final_activation = final_activation
+        self.hidden = hidden
+        self.clip_rho_threshold = 1.0
+        self.clip_pg_rho_threshold = 1.0
+        self.discount_factor = 0.99
+        self.lr = 0.001
+        self.unroll = unroll
+        self.trajectory_size = unroll + 1
+        self.coef = coef
+        self.reward_clip = reward_clip
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.s_ph = torch.zeros((None, self.unroll, *self.state_shape), dtype=torch.float32).to(self.device)
+        self.ns_ph = torch.zeros((None, self.unroll, *self.state_shape), dtype=torch.float32).to(self.device)
+        self.a_ph = torch.zeros((None, self.unroll), dtype=torch.int32).to(self.device)
+        self.d_ph = torch.zeros((None, self.unroll), dtype=torch.bool).to(self.device)
+        self.behavior_policy = torch.zeros((None, self.unroll, self.output_size), dtype=torch.float32).to(self.device)
+        self.r_ph = torch.zeros((None, self.unroll), dtype=torch.float32).to(self.device)
+
+        if self.reward_clip == 'tanh':
+            squeezed = torch.tanh(self.r_ph / 5.0)
+            self.clipped_rewards = torch.where(self.r_ph < 0, 0.3 * squeezed, squeezed) * 5.0
+        elif self.reward_clip == 'abs_one':
+            self.clipped_rewards = torch.clamp(self.r_ph, -1.0, 1.0)
+        elif self.reward_clip == 'no_clip':
+            self.clipped_rewards = self.r_ph
+
+        self.discounts = (~self.d_ph).float() * self.discount_factor
+
+        # self.policy, self.value, self.next_value = core.build_model(
+        #     self.s_ph, self.ns_ph, self.hidden, self.activation, self.output_size,
+        #     self.final_activation, self.state_shape, self.unroll, name)
+
+        # self.transpose_vs, self.transpose_clipped_rho = vtrace.from_softmax(
+        #     behavior_policy_softmax=self.behavior_policy,
+        #     target_policy_softmax=self.policy,
+        #     actions=self.a_ph, discounts=self.discounts, rewards=self.clipped_rewards,
+        #     values=self.value, next_value=self.next_value, action_size=self.output_size)
+
+        self.vs = self.transpose_vs.transpose(0, 1)
+        self.rho = self.transpose_clipped_rho.transpose(0, 1)
+
+        self.vs_ph = torch.zeros((None, self.unroll), dtype=torch.float32).to(self.device)
+        self.pg_advantage_ph = torch.zeros((None, self.unroll), dtype=torch.float32).to(self.device)
+
+        self.value_loss = loss_func.compute_value_loss(self.vs_ph, self.value)
+        self.entropy = loss_func.compute_entropy_loss(self.policy)
+        self.pi_loss = loss_func.compute_policy_loss(self.policy, self.a_ph, self.pg_advantage_ph, self.output_size)
+
+        self.total_loss = self.pi_loss + self.value_loss + self.entropy * self.coef
+        self.optimizer = optim.RMSprop(self.parameters(), lr=self.lr, eps=0.01, momentum=0.0, alpha=0.99)
+
 
     def build_model(self):
         # Define your model architecture here
