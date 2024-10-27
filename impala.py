@@ -9,7 +9,8 @@ import loss_func
 from actor import ActorCritic, Actor
 from learner import Learner
 
-# import vtrace
+import core
+import vtrace
 
 class IMPALA(nn.Module):
 
@@ -22,30 +23,27 @@ class IMPALA(nn.Module):
         elif torch.cuda.is_available():
             self.device = "cuda"
 
-        self.state_shape = state_shape
-        self.output_size = output_size
-
         '''
-            Target Policy : πρ¯
+            # Target Policy : πρ¯
             Target policy는 학습자(Learner)가 최적화하려는 정책입니다. 
             이는 에이전트가 궁극적으로 따르기를 원하는 정책으로, 학습 과정에서 지속적으로 업데이트됩니다. 
             Target policy는 학습자가 수집한 데이터를 기반으로 가치 함수와 정책을 업데이트하는 데 사용됩니다. 
             이 정책은 주로 학습자의 신경망 파라미터로 표현됩니다
 
-            Behaviour Policy : µ
+            # Behaviour Policy : µ
             행동 정책은 에이전트가 환경에서 어떤 행동을 선택할지를 결정하는 정책입니다. 
             IMPALA에서는 여러 개의 액터(actor)가 환경과 상호작용하며 데이터를 수집합니다. 
             이 액터들은 행동 정책을 따르며, 이 정책은 학습자(learner)에 의해 주기적으로 업데이트됩니다. 
             행동 정책은 주로 탐험(exploration)과 활용(exploitation) 사이의 균형을 맞추기 위해 설계됩니다.
 
-            Local Policy
+            # Local Policy
             Local policy는 각 액터(actor)가 환경과 상호작용할 때 사용하는 정책입니다. 
             IMPALA에서는 여러 액터가 병렬로 환경과 상호작용하며 데이터를 수집합니다. 
             이때 각 액터는 자신의 로컬 정책(local policy)을 따릅니다. 
             로컬 정책은 주기적으로 학습자의 타겟 정책으로부터 업데이트되지만, 항상 최신 상태는 아닐 수 있습니다. 
             이는 분산 학습에서 발생하는 지연(latency) 때문입니다
 
-            Value Function : v trace
+            # Value Function : v trace
             가치 함수는 특정 상태에서의 기대 보상을 추정하는 함수입니다. 
             IMPALA에서는 V-trace라는 오프-폴리시(off-policy) 보정 방법을 사용하여 가치 함수를 추정합니다. 
             V-trace는 액터들이 수집한 데이터를 학습자가 효과적으로 사용할 수 있도록 도와줍니다. 
@@ -64,10 +62,7 @@ class IMPALA(nn.Module):
         self.coef = entropy_coef # entropy_coef = 0.01
         self.reward_clip = reward_clip # reward_clip = ['tanh', 'abs_one', 'no_clip']
 
-        # according to paper parameters
-        self.optimizer = optim.RMSprop(self.parameters(), lr=self.lr, eps=0.01, momentum=0.0, alpha=0.99) 
-
-        self.policy = ActorCritic(state_shape,output_size)
+        self.local = ActorCritic(state_shape[0],output_size).to(self.device)
         # self.policy_net = self.policy.actor
         # self.value_net = self.policy.critic
 
@@ -85,12 +80,13 @@ class IMPALA(nn.Module):
         self.coef = entropy_coef
         self.reward_clip = reward_clip
 
-        self.s_ph = torch.zeros((None, self.unroll, *self.state_shape), dtype=torch.float32).to(self.device)
-        self.ns_ph = torch.zeros((None, self.unroll, *self.state_shape), dtype=torch.float32).to(self.device)
-        self.a_ph = torch.zeros((None, self.unroll), dtype=torch.int32).to(self.device)
-        self.d_ph = torch.zeros((None, self.unroll), dtype=torch.bool).to(self.device)
-        self.behavior_policy = torch.zeros((None, self.unroll, self.output_size), dtype=torch.float32).to(self.device)
-        self.r_ph = torch.zeros((None, self.unroll), dtype=torch.float32).to(self.device)
+        self.batch_size = 32
+        self.s_ph = torch.zeros((self.unroll, *self.state_shape), dtype=torch.float32).to(self.device)
+        self.ns_ph = torch.zeros((self.unroll, *self.state_shape), dtype=torch.float32).to(self.device)
+        self.a_ph = torch.zeros((self.unroll), dtype=torch.int32).to(self.device)
+        self.d_ph = torch.zeros((self.unroll), dtype=torch.bool).to(self.device)
+        self.behavior_policy = torch.zeros(( self.unroll, self.output_size), dtype=torch.float32).to(self.device)
+        self.r_ph = torch.zeros((self.unroll), dtype=torch.float32).to(self.device)
 
         if self.reward_clip == 'tanh':
             squeezed = torch.tanh(self.r_ph / 5.0)
@@ -104,19 +100,25 @@ class IMPALA(nn.Module):
 
         # self.policy, self.value, self.next_value = core.build_model(
         #     self.s_ph, self.ns_ph, self.hidden, self.activation, self.output_size,
-        #     self.final_activation, self.state_shape, self.unroll, name)
+        #     self.final_activation, self.state_shape, self.unroll).to(self.device)
+        
+        self.policy,self.value = self.local(self.s_ph)
+        self.policy = self.policy.view(-1,unroll,output_size) 
+        self.value = self.value.view(-1,unroll)
+        _, self.next_value = self.local(self.ns_ph.view(-1, *state_shape))
+        self.next_value = self.next_value.view(-1,unroll)
 
-        # self.transpose_vs, self.transpose_clipped_rho = vtrace.from_softmax(
-        #     behavior_policy_softmax=self.behavior_policy,
-        #     target_policy_softmax=self.policy,
-        #     actions=self.a_ph, discounts=self.discounts, rewards=self.clipped_rewards,
-        #     values=self.value, next_value=self.next_value, action_size=self.output_size)
+        self.transpose_vs, self.transpose_clipped_rho = vtrace.from_softmax(
+            behavior_policy_softmax=self.behavior_policy,
+            target_policy_softmax=self.policy,
+            actions=self.a_ph, discounts=self.discounts, rewards=self.clipped_rewards,
+            values=self.value, next_value=self.next_value, action_size=self.output_size).to(self.device)
 
         self.vs = self.transpose_vs.transpose(0, 1)
         self.rho = self.transpose_clipped_rho.transpose(0, 1)
 
-        self.vs_ph = torch.zeros((None, self.unroll), dtype=torch.float32).to(self.device)
-        self.pg_advantage_ph = torch.zeros((None, self.unroll), dtype=torch.float32).to(self.device)
+        self.vs_ph = torch.zeros((self.unroll), dtype=torch.float32).to(self.device)
+        self.pg_advantage_ph = torch.zeros(( self.unroll), dtype=torch.float32).to(self.device)
 
         # loss term
         self.value_loss = loss_func.compute_value_loss(self.vs_ph, self.value)
@@ -126,10 +128,14 @@ class IMPALA(nn.Module):
         self.total_loss = self.pi_loss + self.value_loss + self.entropy * self.coef
         self.optimizer = optim.RMSprop(self.parameters(), lr=self.lr, eps=0.01, momentum=0.0, alpha=0.99)
 
+        # self.lstm = nn.LSTMCell(hidden + output_size + 1, hidden)
+        # self.fc = nn.Linear(hidden, output_size)
 
     def foward(self,x):
+        # lstm_out, hidden = self.lstm(x, hidden)
         return self.policy(x)
     
+    # learner 기능
     def train(self, state, next_state, reward, done, action, behavior_policy):
         state = torch.FloatTensor(state)
         next_state = torch.FloatTensor(next_state)
@@ -206,6 +212,11 @@ class IMPALA(nn.Module):
     
     def policy_and_action(self):
         state = torch.FloatTensor(state).unsqueeze(0)
+        '''
+        # self.lstm(state,self.hidden)
+        # train_data = torch.randn(100, 10, 1)  # [batch_size, time_steps, features]
+        # train_labels = torch.randn(100, 1)    # [batch_size, output_size]
+        '''
         policy, _ = self.policy(state)
         policy = policy.squeeze(0).detach().numpy()
         action = np.random.choice(self.output_size, p=policy)

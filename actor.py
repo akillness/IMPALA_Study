@@ -6,7 +6,8 @@ import torch.optim as optim
 import copy
 import numpy as np
 
-from impala import IMPALA
+# from impala import IMPALA
+import impala
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -50,6 +51,7 @@ class Actor:
         self.env = env
         self.n_steps = n_steps
         self.unroll = unroll
+        self.name = "actor"
         # if self.name == 'thread_0':
         #     self.env = gym.wrappers.Monitor(self.env, 'save-mov', video_callable=lambda episode_id: episode_id%10==0)
         state_dim = env.observation_space.shape[0]
@@ -57,8 +59,8 @@ class Actor:
 
         self.actor_critic = ActorCritic(state_dim,action_dim)
         
-        self.global_policy =IMPALA(
-                                   state_shape=state_dim,
+        self.global_policy =impala.IMPALA(
+                                   state_shape=env.observation_space.shape,
                                    output_size=action_dim,
                                    activation=nn.ReLU(),
                                    final_activation=nn.Softmax(),
@@ -66,12 +68,12 @@ class Actor:
                                    lr=0.001,
                                    hidden=256,
                                    entropy_coef=0.01,
-                                   reward_clip=['tanh','abs_one','no_clip'],
+                                   reward_clip='tanh',#reward_clip=['tanh','abs_one','no_clip'],
                                    unroll=unroll # figure 2
                                    )
         
-        self.local_policy = IMPALA(
-                                   state_shape=state_dim,
+        self.local_policy = impala.IMPALA(
+                                   state_shape=env.observation_space.shape,
                                    output_size=action_dim,
                                    activation=nn.ReLU(),
                                    final_activation=nn.Softmax(),
@@ -79,7 +81,7 @@ class Actor:
                                    lr=0.001,
                                    hidden=256,
                                    entropy_coef=0.01,
-                                   reward_clip=['tanh','abs_one','no_clip'],
+                                   reward_clip='tanh',
                                    unroll=unroll # figure 2
                                    )
 
@@ -126,12 +128,13 @@ class Actor:
             episode_action = []
             episode_behavior_policy = []
             for i in range(128):
+                
                 action, behavior_policy, max_prob = self.local_policy.policy_and_action(state)
 
                 episode_step += 1
                 total_max_prob += max_prob
             
-                obs, reward, done, _ = self.env.step(action + 1)
+                obs, reward, done, truncated, info = self.env.step(action + 1)
                 # obs = utils.pipeline(obs)
                 history[:, :, :-1] = history[:, :, 1:]
                 history[:, :, -1] = obs
@@ -162,8 +165,8 @@ class Actor:
                     episode += 1
                     score = 0
                     done = False
-                    if self.name == 'thread_0':
-                        self.env.close()
+                    # if self.name == 'thread_0':
+                    #     self.env.close()
                     obs,info = self.env.reset()
                     # obs = utils.pipeline(obs)
                     history = np.stack((obs, obs, obs, obs), axis=2)
@@ -181,3 +184,4 @@ class Actor:
             writer.add_scalar('pi_loss', pi_loss, loss_step)
             writer.add_scalar('value_loss', value_loss, loss_step)
             writer.add_scalar('entropy', entropy, loss_step)
+        self.env.close()

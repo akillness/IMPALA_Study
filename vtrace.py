@@ -134,7 +134,7 @@ def from_logits(behavior_policy_logits, target_policy_logits, actions,
     return transpose_vs, transpose_clipped_rho
 
 def log_probs_from_softmax_and_actions(policy_softmax, actions, action_size):
-    onehot_action = F.one_hot(actions, action_size).float()
+    onehot_action = F.one_hot(actions.long(), action_size).float()
     selected_softmax = torch.sum(policy_softmax * onehot_action, dim=2)
     log_prob = torch.log(selected_softmax)
     return log_prob

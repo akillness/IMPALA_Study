@@ -63,3 +63,48 @@ def generate_trajectory(env, network, max_steps=1000):
 # env = gym.make('CartPole-v1')
 # network = Network()
 # trajectory = generate_trajectory(env, network)
+
+import torch
+import torch.nn as nn
+import numpy as np
+
+class PolicyNetwork(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size):
+        super(PolicyNetwork, self).__init__()
+        self.lstm = nn.LSTM(input_size, hidden_size, batch_first=True)
+        self.fc = nn.Linear(hidden_size, output_size)
+        self.hidden_size = hidden_size
+
+    def forward(self, x, hidden):
+        lstm_out, hidden = self.lstm(x, hidden)
+        policy = torch.softmax(self.fc(lstm_out[:, -1, :]), dim=-1)
+        return policy, hidden
+
+    def init_hidden(self, batch_size):
+        return (torch.zeros(1, batch_size, self.hidden_size),
+                torch.zeros(1, batch_size, self.hidden_size))
+
+class Agent:
+    def __init__(self, input_size, hidden_size, output_size):
+        self.policy_network = PolicyNetwork(input_size, hidden_size, output_size)
+        self.output_size = output_size
+
+    def policy_and_action(self, state):
+        state = torch.FloatTensor(state).unsqueeze(0)  # Add batch dimension
+        batch_size = state.size(0)
+        hidden = self.policy_network.init_hidden(batch_size)
+        policy, hidden = self.policy_network(state, hidden)
+        policy = policy.squeeze(0).detach().numpy()
+        action = np.random.choice(self.output_size, p=policy)
+        return action, policy, max(policy)
+
+# Example usage
+input_size = 4  # Example input size
+hidden_size = 128  # Example hidden size
+output_size = 2  # Example output size
+agent = Agent(input_size, hidden_size, output_size)
+
+state = [1.0, 2.0, 3.0, 4.0]  # Example state
+action, policy, max_policy = agent.policy_and_action(state)
+print(f"Action: {action}, Policy: {policy}, Max Policy: {max_policy}")
+

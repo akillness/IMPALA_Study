@@ -5,21 +5,21 @@ RL 과제 구현 소스관리
 
 Implement IMPALA for CartPole-v1 of gym (or gymnasium) with the following requirements.
 
-- Use 'IMPALA: Scalable Distributed Deep-RL with Importance Weighted Actor-Learner Architectures' for training. - Do not use any baseline code for this task.
+- Use 'IMPALA: Scalable Distributed Deep-RL with Importance Weighted Actor-Learner Architectures' for training.- Do not use any baseline code for this task.
 - It is not necessary to use multi-processing for this task.(You may use just a single process to implement the algorithm.)
 - Write a simple report with graphs of the training:
-  -  score: sum of rewards in the episode,
-  -  critic loss: loss of the value function,
-  -  entropy: entropy of the target policy,
-  -  min/max/avg importance sampling ratio: min/max/avg value of importance sampling ratio in a batch,
-  -  learner batching time: time consumed for making a batch for an update when enough data are given,
-  -  learner forward time: forward time consumed for a batch in learner,
-  -  learner backward time: backward time consumed for a batch in learner,
-  -  and any other values that are helpful to analyze the throughput and bottle neck of the system.
+  - score: sum of rewards in the episode,
+  - critic loss: loss of the value function,
+  - entropy: entropy of the target policy,
+  - min/max/avg importance sampling ratio: min/max/avg value of importance sampling ratio in a batch,
+  - learner batching time: time consumed for making a batch for an update when enough data are given,
+  - learner forward time: forward time consumed for a batch in learner,
+  - learner backward time: backward time consumed for a batch in learner,
+  - and any other values that are helpful to analyze the throughput and bottle neck of the system.
 
 
-- (Optional) If you implement a distributed learning system as follows, you will have extra points: 
-  1) One learner and 4 actors run on different processes. 
+- (Optional) If you implement a distributed learning system as follows, you will have extra points:
+  1) One learner and 4 actors run on different processes.
   2) The actor doesn't stop collecting data while the learner is updating parameters.
 
 - (Optional) If you tried to maximize the throughput of the system (number of data consumed by the system per second), please explain your method why it is beneficial for a higher throughput. You will have extra points for this.

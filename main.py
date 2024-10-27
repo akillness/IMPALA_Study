@@ -1,27 +1,25 @@
 
-import torch
-
-import impala
-
+from impala import IMPALA
+from actor import Actor
 import gym
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("mps" if torch.mps.is_available() else "cpu")
 
 def main():
 
     # Actor
-    # ㄴtrajactory
-    # ㄴlstm
+    # ㄴtrajactory 
+    # ㄴlstm :: local policy
     # Learner
-    # ㄴenv
-    # ㄴvtrace
-    # Distribution
-    # RL
+    # ㄴenv 
+    # ㄴvtrace :: value function
+    # Distribution RL
 
     env_name = 'CartPole-v1'
     env = gym.make(env_name)
-    state_dim = env.observation_space.shape[0]
+    actor = Actor(env,n_steps=5,unroll=5)    
+    # init_hx = torch.zeros((2, 1, 256), dtype=torch.float32)
+    # state_dim = env.observation_space.shape[0]
+    actor.generate_trajectory()
+    actor.run()
 
 
 
