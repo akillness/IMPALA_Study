@@ -159,6 +159,7 @@ def from_importance_weights(log_rhos, discounts, rewards, values, bootstrap_valu
                             clip_rho_threshold=1.0, clip_pg_rho_threshold=1.0):
 
     rhos = torch.exp(log_rhos) # rhos 의 최대 최소, 최대, 평균 구할수 있는 지점
+    
     if clip_rho_threshold is not None:
         clipped_rhos = torch.minimum(torch.tensor(clip_rho_threshold), rhos)
     else:
