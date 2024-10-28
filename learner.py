@@ -30,7 +30,12 @@ def learner(model, data, ps, args):
         trajectory = data.get()
         batch.append(trajectory)
         if torch.cuda.is_available():
-            trajectory.cuda()        
+            trajectory.cuda()
+            model.cuda()
+        elif torch.mps.is_available():
+            trajectory.mps()
+            device = torch.device("mps")
+            model.to(device)
 
         if len(batch) < batch_size:
             continue
@@ -104,6 +109,11 @@ def learner(model, data, ps, args):
 
         if torch.cuda.is_available():
             model.cuda()
+        # Check if MPS is available and move the model to MPS
+        elif torch.backends.mps.is_available():
+            device = torch.device("mps")
+            model.to(device)
+        
         batch = []
 
     writer.close()

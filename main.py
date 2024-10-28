@@ -1,12 +1,23 @@
-import torch
+
 import argparse
-import torch.multiprocessing as mp
+
+from environment import Atari, EnvironmentProxy, get_action_size
 
 from model import IMPALA
-from learner import learner
 from actor import actor
-from environment import Atari, EnvironmentProxy, get_action_size
+from learner import learner
+
+import torch.multiprocessing as mp
 from utils import ParameterServer
+
+# IMPALA : Importance Weighted Actor-Learner Architecture ( vs A3C )
+# - Actor
+    # ㄴtrajactory 
+    # ㄴlstm :: local policy
+# - Learner
+    # ㄴenv 
+    # ㄴvtrace :: value function
+# Distribution RL
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')
@@ -67,8 +78,6 @@ if __name__ == '__main__':
     ps = ParameterServer(lock)
     model = IMPALA(action_size=args.action_size)
     ps.push(model.state_dict())
-    if torch.cuda.is_available():
-        model.cuda()
     
     # env = EnvironmentProxy(Atari,env_args)
     # actor(0,ps,data,env,args)
@@ -77,8 +86,6 @@ if __name__ == '__main__':
     # env = EnvironmentProxy(CartPole,env_args)
     # actor(0,ps,data,env,args,hidden_size)
     # learner(model,data,ps,args)
-
-    
     
     # env
     envs = [EnvironmentProxy(Atari, env_args)

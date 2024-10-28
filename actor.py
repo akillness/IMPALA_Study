@@ -44,6 +44,15 @@ class Trajectory(object):
         self.rewards = self.rewards.cuda()
         self.logit = self.logit.cuda()
 
+    def mps(self):
+        device = torch.device("mps")
+        self.obs = self.obs.to(device)
+        self.actions = self.actions.to(device)
+        self.dones = self.dones.to(device)
+        self.lstm_hx = self.lstm_hx.to(device)
+        self.rewards = self.rewards.to(device)
+        self.logit = self.logit.to(device)
+
     def get_last(self):
         """must call this function before finish()"""
         obs = self.obs[-1]
