@@ -1,10 +1,12 @@
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
-import vtrace
+
 from utils import make_time_major
-from torch.utils.tensorboard import SummaryWriter
+import vtrace
+
 import time
+from torch.utils.tensorboard import SummaryWriter
 
 def learner(model, data, ps, args):
     """Learner to get trajectories from Actors."""
@@ -87,23 +89,30 @@ def learner(model, data, ps, args):
         importance_sampling_ratios = torch.exp(logits - behaviour_logits)
 
         # TensorBoard에 손실 및 보상 기록
-        logs = {
-            'Loss/total': loss.item(),
-            'Loss/cross_entropy': cross_entropy.mean().item(),
-            'Loss/critic': critic_loss.item(),
-            'Entropy': entropy.item(),
-            'Rewards/mean': rewards.mean().item(),
-            'Score': rewards.sum().item(),
-            'Importance_sampling_ratio/min': importance_sampling_ratios.min().item(),
-            'Importance_sampling_ratio/max': importance_sampling_ratios.max().item(),
-            'Importance_sampling_ratio/avg': importance_sampling_ratios.mean().item(),
-            'Time/batch': batch_time,
-            'Time/forward': forward_time,
-            'Time/backward': backward_time
-        }
+        writer.add_scalars('Loss', {
+            'total': loss.item(),
+            'cross_entropy': cross_entropy.mean().item(),
+            'critic': critic_loss.item()
+        }, step)
         
-        for key, value in logs.items():
-            writer.add_scalar(key, value, step)
+        writer.add_scalar('Entropy', entropy.item(), step)
+        
+        writer.add_scalars('Rewards', {
+            'mean': rewards.mean().item(),
+            'sum': rewards.sum().item()
+        }, step)
+        
+        writer.add_scalars('Importance_sampling_ratio', {
+            'min': importance_sampling_ratios.min().item(),
+            'max': importance_sampling_ratios.max().item(),
+            'avg': importance_sampling_ratios.mean().item()
+        }, step)
+        
+        writer.add_scalars('Time', {
+            'batch': batch_time,
+            'forward': forward_time,
+            'backward': backward_time
+        }, step)
 
         step += 1
 

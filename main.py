@@ -12,11 +12,11 @@ from utils import ParameterServer
 
 # IMPALA : Importance Weighted Actor-Learner Architecture ( vs A3C )
 # - Actor
-    # ㄴtrajactory 
-    # ㄴlstm :: local policy
+    # ㄴlstm : 2D-> 1D and batch re-dimesion, history, PCA, local policy
+    # ㄴoutput : trajactory 
 # - Learner
-    # ㄴenv 
-    # ㄴvtrace :: value function
+    # ㄴvtrace : value function, on-policy 처럼 사용
+# Environment ( Game )
 # Distribution RL
 
 if __name__ == '__main__':
