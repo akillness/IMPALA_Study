@@ -1,27 +1,85 @@
+import torch
+import argparse
+import torch.multiprocessing as mp
 
-from impala import IMPALA
-from actor import Actor
-import gym
+from model import IMPALA
+from learner import learner
+from actor import actor
+from environment import CartPole, EnvironmentProxy, get_action_size
+from utils import ParameterServer
 
-def main():
+if __name__ == '__main__':
+    mp.set_start_method('spawn')
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--actors", type=int, default=1,
+                        help="the number of actors to start, default is 8")
+    parser.add_argument("--seed", type=int, default=123,
+                        help="the seed of random, default is 123")
+    parser.add_argument("--game_name", type=str, default='breakout',
+                        help="the name of atari game, default is breakout")
+    parser.add_argument('--length', type=int, default=20,
+                        help='Number of steps to run the agent')
+    parser.add_argument('--total_steps', type=int, default=80000000,
+                        help='Number of steps to run the agent')
+    parser.add_argument('--batch_size', type=int, default=1,
+                        help='Number of steps to run the agent')
+    parser.add_argument("--gamma", type=float, default=0.99,
+                        help="the discount factor, default is 0.99")
+    parser.add_argument("--entropy_cost", type=float, default=0.00025,
+                        help="Entropy cost/multiplier, default is 0.00025")
+    parser.add_argument("--baseline_cost", type=float, default=.5,
+                        help="Baseline cost/multiplier, default is 0.5")
+    parser.add_argument("--lr", type=float, default=0.00048,
+                        help="Learning rate, default is 0.00048")
+    parser.add_argument("--decay", type=float, default=.99,
+                        help="RMSProp optimizer decay, default is .99")
+    parser.add_argument("--momentum", type=float, default=0,
+                        help="RMSProp momentum, default is 0")
+    parser.add_argument("--epsilon", type=float, default=.1,
+                        help="RMSProp epsilon, default is 0.1")
+    parser.add_argument('--save_path', type=str, default="./checkpoint.pt",
+                        help='Set the path to save trained model parameters')
+    parser.add_argument('--load_path', type=str, default="./checkpoint.pt",
+                        help='Set the path to load trained model parameters')
 
-    # Actor
-    # ㄴtrajactory 
-    # ㄴlstm :: local policy
-    # Learner
-    # ㄴenv 
-    # ㄴvtrace :: value function
-    # Distribution RL
+    args = parser.parse_args()
+    data = mp.Queue(maxsize=1)
+    lock = mp.Lock()
+
+    # env_args = {'game_name': args.game_name, 'seed': args.seed}
+    # action_size = get_action_size(Atari, env_args)
 
     env_name = 'CartPole-v1'
-    env = gym.make(env_name)
-    actor = Actor(env,n_steps=5,unroll=5)    
-    # init_hx = torch.zeros((2, 1, 256), dtype=torch.float32)
-    # state_dim = env.observation_space.shape[0]
-    actor.generate_trajectory()
-    actor.run()
+    args.game_name = env_name
+    env_args = {'game_name': args.game_name, 'seed': args.seed}
+    action_size = get_action_size(CartPole, env_args)
+    args.action_size = action_size
 
+    # optional : using 4-actor process 
+    ps = ParameterServer(lock)
+    model = IMPALA(action_size=args.action_size)
+    ps.push(model.state_dict())
+    if torch.cuda.is_available():
+        model.cuda()
+    
+    env = EnvironmentProxy(CartPole,env_args)
+    
+    actor(0,ps,data,env,args)
+    learner(model,data,ps,args)
+    '''
+    # env
+    envs = [EnvironmentProxy(CartPole, env_args)
+            for idx in range(args.actors)]
+    # learner
+    learner = mp.Process(target=learner, args=(model, data, ps, args))
 
-
-if __name__ == "__main__":
-    main()
+    # actor
+    actors = [mp.Process(target=actor, args=(idx, ps, data, envs[idx], args))
+              for idx in range(args.actors)]
+    
+    # multi-process
+    learner.start()
+    [actor.start() for actor in actors]
+    [actor.join() for actor in actors]
+    learner.join()
+    '''

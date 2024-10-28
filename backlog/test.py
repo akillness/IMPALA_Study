@@ -20,7 +20,7 @@
 """Actor to generate trajactories"""
 
 import torch
-from model import Network
+from model import IMPALA
 
 
 class Trajectory(object):
@@ -80,7 +80,7 @@ def actor(idx, ps, data, env, args):
     steps = 0
     length = args.length
     action_size = args.action_size
-    model = Network(action_size=action_size)
+    model = IMPALA(action_size=action_size)
     init_hx = torch.zeros((2, 1, 256), dtype=torch.float32)
     # save_path = args.save_path
     # load_path = args.load_path
