@@ -81,39 +81,39 @@ def actor(idx, ps, data, env, args):
     init_state = (obs, last_action, reward, done, logits)
     persistent_state = init_state
     rewards = 0
-    # while True:
+    while True:
         # print("Actor: {} Steps: {} Reward: {}".format(idx, steps, rewards))
-    model.load_state_dict(ps.pull())
-    # print("Actor: {} load".format(idx))
-    rollout = Trajectory()
-    # print("Actor: {} trajectory init".format(idx))
-    rollout.actor_id = idx
-    rollout.lstm_hx = hx.squeeze()
-    rollout.append(*persistent_state)
-    total_reward = 0
-    with torch.no_grad():
-        while True:
-            if rollout.length == length + 1:
-                rewards += total_reward
-                persistent_state = rollout.get_last()
-                rollout.finish()
-                data.put(rollout)
-                print("Actor: {} put Steps: {} rewards:{}".format(idx, steps, rewards))
-                break
-            if done:
-                rewards = 0.
-                steps = 0
-                hx = init_hx
-                __, last_action, reward, done, _ = init_state
-                obs = env.reset()
-            action, logits, hx = model(obs.unsqueeze(0), last_action, reward,
-                                        done, hx, actor=True)
-            obs, reward, done = env.step(action)
-            total_reward += reward
-            last_action = torch.tensor(action, dtype=torch.int64).view(1, 1)
-            reward = torch.tensor(reward, dtype=torch.float32).view(1, 1)
-            done = torch.tensor(done, dtype=torch.bool).view(1, 1)
-            rollout.append(obs, last_action, reward, done, logits.detach())
-            steps += 1
+        model.load_state_dict(ps.pull())
+        # print("Actor: {} load".format(idx))
+        rollout = Trajectory()
+        # print("Actor: {} trajectory init".format(idx))
+        rollout.actor_id = idx
+        rollout.lstm_hx = hx.squeeze()
+        rollout.append(*persistent_state)
+        total_reward = 0
+        with torch.no_grad():
+            while True:
+                if rollout.length == length + 1:
+                    rewards += total_reward
+                    persistent_state = rollout.get_last()
+                    rollout.finish()
+                    data.put(rollout)
+                    print("Actor: {} put Steps: {} rewards:{}".format(idx, steps, rewards))
+                    break
+                if done:
+                    rewards = 0.
+                    steps = 0
+                    hx = init_hx
+                    __, last_action, reward, done, _ = init_state
+                    obs = env.reset()
+                action, logits, hx = model(obs.unsqueeze(0), last_action, reward,
+                                           done, hx, actor=True)
+                obs, reward, done = env.step(action)
+                total_reward += reward
+                last_action = torch.tensor(action, dtype=torch.int64).view(1, 1)
+                reward = torch.tensor(reward, dtype=torch.float32).view(1, 1)
+                done = torch.tensor(done, dtype=torch.bool).view(1, 1)
+                rollout.append(obs, last_action, reward, done, logits.detach())
+                steps += 1
 
     env.close()

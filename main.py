@@ -5,13 +5,13 @@ import torch.multiprocessing as mp
 from model import IMPALA
 from learner import learner
 from actor import actor
-from environment import CartPole, EnvironmentProxy, get_action_size
+from environment import Atari, EnvironmentProxy, get_action_size
 from utils import ParameterServer
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--actors", type=int, default=1,
+    parser.add_argument("--actors", type=int, default=4,
                         help="the number of actors to start, default is 8")
     parser.add_argument("--seed", type=int, default=123,
                         help="the seed of random, default is 123")
@@ -21,7 +21,7 @@ if __name__ == '__main__':
                         help='Number of steps to run the agent')
     parser.add_argument('--total_steps', type=int, default=80000000,
                         help='Number of steps to run the agent')
-    parser.add_argument('--batch_size', type=int, default=1,
+    parser.add_argument('--batch_size', type=int, default=2,
                         help='Number of steps to run the agent')
     parser.add_argument("--gamma", type=float, default=0.99,
                         help="the discount factor, default is 0.99")
@@ -41,19 +41,27 @@ if __name__ == '__main__':
                         help='Set the path to save trained model parameters')
     parser.add_argument('--load_path', type=str, default="./checkpoint.pt",
                         help='Set the path to load trained model parameters')
+    parser.add_argument('--log_dir', type=str, default="./runs/",
+                        help='Set the path to load trained model parameters')
 
     args = parser.parse_args()
     data = mp.Queue(maxsize=1)
     lock = mp.Lock()
-
-    # env_args = {'game_name': args.game_name, 'seed': args.seed}
-    # action_size = get_action_size(Atari, env_args)
-
-    env_name = 'CartPole-v1'
-    args.game_name = env_name
+    
+    
     env_args = {'game_name': args.game_name, 'seed': args.seed}
-    action_size = get_action_size(CartPole, env_args)
-    args.action_size = action_size
+    action_size = get_action_size(Atari, env_args)
+    args.action_size = action_size    
+    
+
+    # env_name = 'CartPole-v1'
+    # args.game_name = env_name
+    # env_args = {'game_name': args.game_name, 'seed': args.seed}
+    # action_size = get_action_size(CartPole, env_args)
+    # args.action_size = action_size
+    # env = EnvironmentProxy(CartPole,env_args)
+    # actor(0,ps,data,env,args)
+    # learner(model,data,ps,args)
 
     # optional : using 4-actor process 
     ps = ParameterServer(lock)
@@ -62,13 +70,18 @@ if __name__ == '__main__':
     if torch.cuda.is_available():
         model.cuda()
     
-    env = EnvironmentProxy(CartPole,env_args)
+    # env = EnvironmentProxy(Atari,env_args)
+    # actor(0,ps,data,env,args)
+    # learner(model,data,ps,args)
+
+    # env = EnvironmentProxy(CartPole,env_args)
+    # actor(0,ps,data,env,args,hidden_size)
+    # learner(model,data,ps,args)
+
     
-    actor(0,ps,data,env,args)
-    learner(model,data,ps,args)
-    '''
+    
     # env
-    envs = [EnvironmentProxy(CartPole, env_args)
+    envs = [EnvironmentProxy(Atari, env_args)
             for idx in range(args.actors)]
     # learner
     learner = mp.Process(target=learner, args=(model, data, ps, args))
@@ -82,4 +95,4 @@ if __name__ == '__main__':
     [actor.start() for actor in actors]
     [actor.join() for actor in actors]
     learner.join()
-    '''
+    

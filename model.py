@@ -12,17 +12,17 @@ class IMPALA(nn.Module):
         self.conv1 = nn.Conv2d(input_channels, 32, 8, stride=4, padding=1)
         self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
         self.conv3 = nn.Conv2d(64, 64, 3)
-        self.fc = nn.Linear(16,hidden_size)
-        # self.fc = nn.Linear(3136, hidden_size)
+        self.fc = nn.Linear(3136, hidden_size)
         self.lstm = nn.LSTMCell(hidden_size + action_size + 1, 256)
-        self.actorcritic = ActorCritic(action_size)
+        self.actorcritic = ActorCritic(action_size,hidden_size//2)
 
     def forward(self, x, last_action, reward, dones, hx=None, actor=False):
         # state 의 trajectory의 길이 단위별로 history 설정 및 batch size 만큼 차원변경
+        # state 의 history 는 약 4-step
         seq_len, bs, x, last_action, reward = combine_time_batch(x, last_action, reward, actor)
         last_action = torch.zeros(last_action.shape[0], self.action_space,
                                   dtype=torch.float32, device=x.device).scatter_(1, last_action, 1)
-        '''  
+        # 이미지가 input인 경우, 3-layer conv
         x = F.leaky_relu(self.conv1(x), inplace=True)
         x = F.leaky_relu(self.conv2(x), inplace=True)
         x = F.leaky_relu(self.conv3(x), inplace=True)
@@ -35,6 +35,7 @@ class IMPALA(nn.Module):
         x = F.leaky_relu(self.fc(x), inplace=True)
         x = torch.cat((x, reward, last_action), dim=1)
         x = x.view(seq_len, bs, -1)
+        '''
 
         # lstm 추가구문
         lstm_out = []
@@ -46,8 +47,6 @@ class IMPALA(nn.Module):
             lstm_out.append(hx[0])
             hx = torch.stack(hx, 0)
         x = torch.cat(lstm_out, 0)
-
-        # actor critic을 이용한 policy, value
         logits, values = self.actorcritic(x, actor)
         logits[torch.isnan(logits)] = 1e-12
         if not actor:
@@ -58,10 +57,10 @@ class IMPALA(nn.Module):
 
 
 class ActorCritic(nn.Module):
-    def __init__(self, action_space):
+    def __init__(self, action_space, hidden_size):
         super().__init__()
-        self.actor_linear = nn.Linear(256, action_space)
-        self.critic_linear = nn.Linear(256, 1)
+        self.actor_linear = nn.Linear(hidden_size, action_space)
+        self.critic_linear = nn.Linear(hidden_size, 1)
 
     def forward(self, x, actor):
         logits = self.actor_linear(x)

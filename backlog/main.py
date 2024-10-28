@@ -1,6 +1,6 @@
 
 from impala import IMPALA
-from actor import Actor
+from actor_modify import Actor
 import gym
 
 def main():
