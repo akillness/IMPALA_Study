@@ -1,6 +1,5 @@
 import torch
 
-
 class SyncParameters(object):
     def __init__(self, lock):
         self.lock = lock
@@ -14,8 +13,7 @@ class SyncParameters(object):
         with self.lock:
             self.weight = weigth
 
-
-def make_time_major(batch):
+def transpose_batch(batch):
     obs = []
     actions = []
     rewards = []
@@ -37,8 +35,7 @@ def make_time_major(batch):
     hidden_state = torch.stack(hidden_state).transpose(0, 1)
     return logits, obs, actions, rewards, dones, hidden_state
 
-
-def combine_time_batch(x, last_action, reward, actor=False):
+def reshape_history_dim(x, last_action, reward, actor=False):
     if actor:
         return 1, 1, x, last_action, reward
     seq_len = x.shape[0]

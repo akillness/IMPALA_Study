@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from utils import combine_time_batch
+from utils import reshape_history_dim
 
 
 class IMPALA(nn.Module):
@@ -19,7 +19,7 @@ class IMPALA(nn.Module):
     def forward(self, input_tensor, last_action, reward, done_flags, hidden_state=None, actor=False):
         # state 의 trajectory의 길이 단위별로 history 설정 및 batch size 만큼 차원변경
         # state 의 history-4 stack
-        seq_len, batch_size, input_tensor, last_action, reward = combine_time_batch(input_tensor, last_action, reward, actor)
+        seq_len, batch_size, input_tensor, last_action, reward = reshape_history_dim(input_tensor, last_action, reward, actor)
         last_action = torch.zeros(last_action.shape[0], self.action_space,
                                   dtype=torch.float32, device=input_tensor.device).scatter_(1, last_action, 1)
         # 3-layer conv
@@ -30,12 +30,6 @@ class IMPALA(nn.Module):
         input_tensor = F.leaky_relu(self.fc(input_tensor), inplace=True)
         input_tensor = torch.cat((input_tensor, reward, last_action), dim=1)
         input_tensor = input_tensor.view(seq_len, batch_size, -1)
-        '''
-        x = x.view(x.shape[0], -1)
-        x = F.leaky_relu(self.fc(x), inplace=True)
-        x = torch.cat((x, reward, last_action), dim=1)
-        x = x.view(seq_len, bs, -1)
-        '''
 
         # state 의 history-4 stack 에 대한 lstm feature를 actorcritic 에 state로 추가
         lstm_outputs = []

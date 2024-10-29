@@ -2,7 +2,7 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 
-from utils import make_time_major
+from utils import transpose_batch
 import vtrace
 
 import time
@@ -82,7 +82,7 @@ def learner(model, experience_queue, sync_ps, args):
 
         if len(batch) < batch_size:
             continue
-        behaviour_logits, obs, actions, rewards, dones, hidden_state = make_time_major(batch)
+        behaviour_logits, obs, actions, rewards, dones, hidden_state = transpose_batch(batch)
         batch_time = time.time() - start_batch_time
 
         optimizer.zero_grad()

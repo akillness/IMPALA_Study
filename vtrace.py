@@ -114,54 +114,6 @@ def from_logits(behaviour_policy_logits, target_policy_logits, actions,
         clip_pg_rho_threshold=clip_pg_rho_threshold)
     return vs, pg_advantages
 
-    # transpose_log_rhos = log_rhos.transpose(0, 1)
-    # transpose_discounts = discounts.transpose(0, 1)
-    # transpose_rewards = rewards.transpose(0, 1)
-    # transpose_values = values.transpose(0, 1)
-    # transpose_bootstrap_value = bootstrap_value.transpose(0, 1)
-
-    # transpose_vs, transpose_clipped_rho = from_importance_weights(
-    #     log_rhos=transpose_log_rhos,
-    #     discounts=transpose_discounts,
-    #     rewards=transpose_rewards,
-    #     values=transpose_values,
-    #     bootstrap_value=transpose_bootstrap_value[-1],
-    #     clip_rho_threshold=clip_rho_threshold,
-    #     clip_pg_rho_threshold=clip_pg_rho_threshold)
-
-    # return transpose_vs, transpose_clipped_rho
-
-# def log_probs_from_softmax_and_actions(policy_softmax, actions, action_size):
-#     onehot_action = F.one_hot(actions.long(), action_size).float()
-#     selected_softmax = torch.sum(policy_softmax * onehot_action, dim=2)
-#     log_prob = torch.log(selected_softmax)
-#     return log_prob
-
-# def from_softmax(behavior_policy_softmax, target_policy_softmax, actions,
-#                  discounts, rewards, values, bootstrap_value, action_size,
-#                  clip_rho_threshold=1.0, clip_pg_rho_threshold=1.0):
-            
-#     target_action_log_probs = log_probs_from_softmax_and_actions(target_policy_softmax, actions, action_size)
-#     behavior_action_log_probs = log_probs_from_softmax_and_actions(behavior_policy_softmax, actions, action_size)
-#     log_rhos = target_action_log_probs - behavior_action_log_probs
-
-#     transpose_log_rhos = log_rhos.transpose(0, 1)
-#     transpose_discounts = discounts.transpose(0, 1)
-#     transpose_rewards = rewards.transpose(0, 1)
-#     transpose_values = values.transpose(0, 1)
-#     transpose_bootstrap_value = bootstrap_value.transpose(0, 1)
-
-#     transpose_vs, transpose_clipped_rho = from_importance_weights(
-#         log_rhos=transpose_log_rhos,
-#         discounts=transpose_discounts,
-#         rewards=transpose_rewards,
-#         values=transpose_values,
-#         bootstrap_value=transpose_bootstrap_value[-1],
-#         clip_rho_threshold=clip_rho_threshold,
-#         clip_pg_rho_threshold=clip_pg_rho_threshold)
-
-#     return transpose_vs, transpose_clipped_rho
-
 def from_importance_weights(
         log_rhos, discounts, rewards, values, bootstrap_value,
         clip_rho_threshold=1.0, clip_pg_rho_threshold=1.0):

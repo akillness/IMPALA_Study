@@ -133,8 +133,7 @@ class CartPole:
         np.random.seed(seed)
         self.env._max_episode_steps = max_episode_length
         
-        actions = self.env.unwrapped.get_action_meanings() 
-        self.actions = dict(zip(range(len(actions)), actions))
+        self.actions = self.env.action_space 
         self.reward_clip = reward_clip
         self.window = history_length  # Number of frames to concatenate
         self.state_buffer = deque([], maxlen=history_length)
@@ -175,7 +174,7 @@ class CartPole:
         frame_buffer = torch.zeros(2, 84, 84, device=self.device)
         reward, done = 0, False
         for t in range(4):
-            _, reward, done, _, info = self.env.step(self.actions.get(action))
+            _, reward, done, _, info = self.env.step(action)
             if t == 2:
                 frame_buffer[0] = self._get_state()
             elif t == 3:
@@ -211,7 +210,7 @@ class CartPole:
         self.training = False
 
     def action_size(self):
-        return len(self.actions)
+        return self.actions.n
 
     def close(self):
         self.env.close()
@@ -232,21 +231,21 @@ class EnvironmentThread(object):
 
     def close(self):
         try:
-            self.command_queue.put((2, None))
+            self.command_queue.put([2, None])
             self._thread.join()
         except IOError:
             raise IOError
         print("closed env type of normal")
 
     def reset(self):
-        self.command_queue.put((0, None))
+        self.command_queue.put([0, None])
         state = self.result_queue.get()
         if state is None:
             raise ValueError
         return state
 
     def step(self, action):
-        self.command_queue.put((1, action))
+        self.command_queue.put([1, action])
         state, reward, terminal = self.result_queue.get()
         return state, reward, terminal
 

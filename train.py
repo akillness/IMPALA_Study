@@ -1,7 +1,7 @@
 
 import argparse
 
-from environment import CartPole,  get_action_size, EnvironmentThread, EnvironmentProcess
+from environment import CartPole,EnvironmentThread,get_action_size
 
 from model import IMPALA
 from actor import actor
@@ -9,7 +9,6 @@ from learner import learner
 
 import threading, queue
 from concurrent.futures import ThreadPoolExecutor
-
 
 from utils import SyncParameters
 
@@ -66,6 +65,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     env_args = {'game_name': args.game_name, 'seed': args.seed, 'reward_clip': args.reward_clip}
     action_size = get_action_size(CartPole, env_args)
+    # action_size = get_action_size(Atari, env_args)
     args.action_size = action_size    
 
     '''
@@ -81,6 +81,7 @@ if __name__ == '__main__':
     model = IMPALA(action_size=args.action_size)
     sync_ps.push(model.state_dict())
 
+    # max workers : actors + learner
     with ThreadPoolExecutor(max_workers=args.actors + 1) as executor:
         # actors
         thread_pool = [executor.submit(actor, idx, experience_queue, sync_ps, envs[idx], args) for idx in range(args.actors)]
@@ -90,23 +91,27 @@ if __name__ == '__main__':
         # synchronous learning and actors
         for thread in thread_pool:
             thread.result()
-   
-    '''
+    
+    """
     # Optional Section
+
+    from environment import CartPole, get_action_size, EnvironmentProcess
 
     import torch.multiprocessing as mp
 
     mp.set_start_method('spawn')
     
     # optional : using 4-actor other process 
-    experience_queue = mp.Queue()
+    args.actors = 4
+
+    experience_queue = mp.Queue(maxsize=1)
     lock = mp.Lock()
     sync_ps = SyncParameters(lock)
     model = IMPALA(action_size=args.action_size)
     sync_ps.push(model.state_dict())
     
     # environments of multi-process paired actors
-    envs = [EnvironmentProxy(CartPole, env_args)
+    envs = [EnvironmentProcess(CartPole, env_args)
             for idx in range(args.actors)]
     # learner
     learner = mp.Process(target=learner, args=(model, experience_queue, sync_ps, args))
@@ -120,4 +125,4 @@ if __name__ == '__main__':
     [actor.start() for actor in actors]
     [actor.join() for actor in actors]
     learner.join()
-    '''
+    """
