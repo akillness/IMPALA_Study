@@ -1,7 +1,7 @@
 
 import argparse
 
-from environment import CartPole,EnvironmentThread,get_action_size
+from environment import CartPole_img,EnvironmentThread,get_action_size
 
 from model import IMPALA
 from actor import actor
@@ -64,7 +64,7 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     env_args = {'game_name': args.game_name, 'seed': args.seed, 'reward_clip': args.reward_clip}
-    action_size = get_action_size(CartPole, env_args)
+    action_size = get_action_size(CartPole_img, env_args)
     # action_size = get_action_size(Atari, env_args)
     args.action_size = action_size    
 
@@ -74,7 +74,7 @@ if __name__ == '__main__':
     # env_name = 'CartPole-v1'   
     experience_queue = queue.Queue()
     lock = threading.Lock()
-    envs = [EnvironmentThread(CartPole, env_args)
+    envs = [EnvironmentThread(CartPole_img, env_args)
             for idx in range(args.actors)]
 
     # env = CartPole(env_args['game_name'],env_args['seed'],env_args['reward_clip'])

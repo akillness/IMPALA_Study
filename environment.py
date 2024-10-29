@@ -125,7 +125,7 @@ class Atari:
             self.viewer = None
 
 # RL 과제를 위한 CartPole 게임환경(image) state
-class CartPole:
+class CartPole_img:
     def __init__(self, game_name, seed,reward_clip, max_episode_length=1e10, history_length=4, device='cpu'):
         self.device = device
         self.env = gym.make(game_name, render_mode="rgb_array")
