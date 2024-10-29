@@ -132,7 +132,6 @@ def learner(model, experience_queue, sync_ps, args):
         # TensorBoard에 손실 및 보상 기록
         writer.add_scalars('Loss', {
             'total': loss.item(),
-            # 'cross_entropy': cross_entropy.mean().item(),
             'critic': critic_loss.item()
         }, step)
         

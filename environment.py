@@ -128,11 +128,12 @@ class Atari:
 class CartPole:
     def __init__(self, game_name, seed,reward_clip, max_episode_length=1e10, history_length=4, device='cpu'):
         self.device = device
-        self.env = gym.make(game_name)
+        self.env = gym.make(game_name, render_mode="rgb_array")
         self.env.reset(seed=seed)
         np.random.seed(seed)
         self.env._max_episode_steps = max_episode_length
         
+        self.life_termination = False
         self.actions = self.env.action_space 
         self.reward_clip = reward_clip
         self.window = history_length  # Number of frames to concatenate
@@ -147,21 +148,21 @@ class CartPole:
 
     def _reset_buffer(self):
         for _ in range(self.window):
-            self.state_buffer.append(torch.zeros(4, device=self.device))
+            self.state_buffer.append(torch.zeros(84, 84, device=self.device))
 
     def reset(self):
         if self.life_termination:
             self.life_termination = False  # Reset flag
-            observation, reward, done, _, info = self.env.step(0)
+            _, _, done, _, info = self.env.step(0)
         else:
             # Reset internals
             self._reset_buffer()
-            observation, reward, done, _, info = self.env.reset()
-            # Perform up to 30 random no-ops before starting
-            for _ in range(random.randrange(30)):
-                self.env.step(0)  # Assumes raw action 0 is always no-op
+            state, _ = self.env.reset()
+            # Perform up to 5 random no-ops before starting
+            for __ in range(random.randrange(5)):
+                _, _, done, _, info = self.env.step(0)  # Assumes raw action 0 is always no-op
                 if done:
-                    observation, reward, done, truncated, info = self.env.reset()
+                    state, _ = self.env.reset()
         
         # Process and return "initial" state
         observation = self._get_state()
@@ -258,8 +259,10 @@ class EnvironmentThread(object):
                 command, arg = command_queue.get()
                 if command == 0:
                     result_queue.put(env.reset())
+                    result_queue.task_done()
                 elif command == 1:
                     result_queue.put(env.step(arg))
+                    result_queue.task_done()
                 elif command == 2:
                     env.close()
                     break

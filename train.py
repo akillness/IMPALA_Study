@@ -77,6 +77,8 @@ if __name__ == '__main__':
     envs = [EnvironmentThread(CartPole, env_args)
             for idx in range(args.actors)]
 
+    # env = CartPole(env_args['game_name'],env_args['seed'],env_args['reward_clip'])
+    
     sync_ps = SyncParameters(lock)
     model = IMPALA(action_size=args.action_size)
     sync_ps.push(model.state_dict())
