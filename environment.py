@@ -1,14 +1,27 @@
-import cv2
-import torch
-import random
-import atari_py
-import torch.multiprocessing as mp
-from collections import deque
 
 import gym
 import numpy as np
 import math
-# from PIL import Image
+import torch
+import random
+
+import cv2
+
+import threading
+import queue
+
+from collections import deque
+
+import atari_py
+import torch.multiprocessing as mp
+
+
+def get_action_size(env_class, env_args):
+    env = env_class(**env_args)
+    action_size = env.action_size()
+    env.close()
+    del env
+    return action_size
 
 class Atari:
     def __init__(self, game_name, seed, reward_clip, max_episode_length=1e10, history_length=4,  device='cpu'):
@@ -203,7 +216,67 @@ class CartPole:
     def close(self):
         self.env.close()
 
-class EnvironmentProxy(object):
+class EnvironmentThread(object):
+    def __init__(self, env_class, constructor_kwargs):
+        self.env_class = env_class
+        self._constructor_kwargs = constructor_kwargs
+
+    def start(self):
+        self.command_queue = queue.Queue()
+        self.result_queue = queue.Queue()
+        self._thread = threading.Thread(target=self.worker, args=(self.env_class, self._constructor_kwargs, self.command_queue, self.result_queue))
+        self._thread.start()
+        result = self.result_queue.get()
+        if isinstance(result, Exception):
+            raise result
+
+    def close(self):
+        try:
+            self.command_queue.put((2, None))
+            self._thread.join()
+        except IOError:
+            raise IOError
+        print("closed env type of normal")
+
+    def reset(self):
+        self.command_queue.put((0, None))
+        state = self.result_queue.get()
+        if state is None:
+            raise ValueError
+        return state
+
+    def step(self, action):
+        self.command_queue.put((1, action))
+        state, reward, terminal = self.result_queue.get()
+        return state, reward, terminal
+
+    def worker(self, env_class, constructor_kwargs, command_queue, result_queue):
+        try:
+            env = env_class(**constructor_kwargs)
+            result_queue.put(None)  # Ready.
+            while True:
+                # Receive request.
+                command, arg = command_queue.get()
+                if command == 0:
+                    result_queue.put(env.reset())
+                elif command == 1:
+                    result_queue.put(env.step(arg))
+                elif command == 2:
+                    env.close()
+                    break
+                else:
+                    print("bad command: {}".format(command))
+        except Exception as e:
+            if 'env' in locals() and hasattr(env, 'close'):
+                try:
+                    env.close()
+                    print("closed error")
+                except:
+                    pass
+            result_queue.put(e)
+
+
+class EnvironmentProcess(object):
     def __init__(self, env_class, constructor_kwargs):
         self.env_class = env_class
         self._constructor_kwargs = constructor_kwargs
@@ -222,7 +295,7 @@ class EnvironmentProxy(object):
             self.conn.close()
         except IOError:
             raise IOError
-        print("closed normal")
+        print("closed env type of normal")
         self._process.join()
 
     def reset(self):
@@ -240,9 +313,8 @@ class EnvironmentProxy(object):
     def worker(self, env_class, constructor_kwargs, conn):
         try:
             env = env_class(**constructor_kwargs)
-            conn.send(None)  # Ready.
+            conn.send(None)
             while True:
-                # Receive request.
                 command, arg = conn.recv()
                 if command == 0:
                     conn.send(env.reset())
@@ -264,9 +336,4 @@ class EnvironmentProxy(object):
             conn.send(e)
 
 
-def get_action_size(env_class, env_args):
-    env = env_class(**env_args)
-    action_size = env.action_size()
-    env.close()
-    del env
-    return action_size
+

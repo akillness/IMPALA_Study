@@ -8,7 +8,6 @@
 import torch
 from model import IMPALA
 
-
 class Trajectory(object):
     """class to store trajectory data."""
 
@@ -77,8 +76,7 @@ def actor(idx, experience_queue, sync_ps, env, args):
     action_size = args.action_size
     model = IMPALA(action_size=action_size)
     init_lstm_state = torch.zeros((2, 1, 256), dtype=torch.float32)
-    # save_path = args.save_path
-    # load_path = args.load_path
+    
     env.start()
     """Run the env for n steps and return a trajectory rollout."""
     obs = env.reset()
@@ -105,8 +103,9 @@ def actor(idx, experience_queue, sync_ps, env, args):
                     rewards += total_reward
                     persistent_state = rollout.get_last()
                     rollout.finish()
+                    # Queue trajectory data( all of state )
                     experience_queue.put(rollout)
-                    print("Actor: {} put Steps: {} rewards:{}".format(idx, steps, rewards))
+                    print(f"Trajectory is full, Actor({idx}) / Total Reward : {total_reward} ")
                     break
                 if done:
                     rewards = 0.
@@ -114,6 +113,7 @@ def actor(idx, experience_queue, sync_ps, env, args):
                     hidden_state = init_lstm_state
                     __, last_action, reward, done, _ = init_state
                     obs = env.reset()
+
                 action, logits, hidden_state = model(obs.unsqueeze(0), last_action, reward,
                                            done, hidden_state, actor=True)
                 obs, reward, done = env.step(action)

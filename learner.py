@@ -69,6 +69,7 @@ def learner(model, experience_queue, sync_ps, args):
     while True:
         # check batch time
         start_batch_time = time.time()
+        # Dequeue trajectory data( all of state )
         trajectory = experience_queue.get()
         batch.append(trajectory)
         if torch.cuda.is_available():

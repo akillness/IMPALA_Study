@@ -1,13 +1,16 @@
 
 import argparse
 
-from environment import Atari, EnvironmentProxy, get_action_size
+from environment import CartPole,  get_action_size, EnvironmentThread, EnvironmentProcess
 
 from model import IMPALA
 from actor import actor
 from learner import learner
 
-import torch.multiprocessing as mp
+import threading, queue
+from concurrent.futures import ThreadPoolExecutor
+
+
 from utils import SyncParameters
 
 # IMPALA : Importance Weighted Actor-Learner Architecture ( vs A3C )
@@ -21,14 +24,14 @@ from utils import SyncParameters
 # Distribution RL
 
 if __name__ == '__main__':
-    mp.set_start_method('spawn')
+    
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--actors", type=int, default=5,
+    parser.add_argument("--actors", type=int, default=1,
                         help="the number of actors to start, default is 8")
     parser.add_argument("--seed", type=int, default=20,
                         help="the seed of random, default is 20")
-    parser.add_argument("--game_name", type=str, default='breakout',
-                        help="the name of atari game, default is cartpole")
+    parser.add_argument("--game_name", type=str, default='CartPole-v1',
+                        help="the name of atari game, default is CartPole-v1")
     parser.add_argument('--length', type=int, default=20,
                         help='Number of steps to run the agent')
     parser.add_argument('--total_steps', type=int, default=80000000,
@@ -62,46 +65,48 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     env_args = {'game_name': args.game_name, 'seed': args.seed, 'reward_clip': args.reward_clip}
-    action_size = get_action_size(Atari, env_args)
+    action_size = get_action_size(CartPole, env_args)
     args.action_size = action_size    
-    
-    # standard single-process 
 
+    '''
+    # Standard single-process
+    '''
+    # env_name = 'CartPole-v1'   
+    experience_queue = queue.Queue()
+    lock = threading.Lock()
+    envs = [EnvironmentThread(CartPole, env_args)
+            for idx in range(args.actors)]
 
-    # experience_queue = mp.Queue(maxsize=1)
-    # lock = mp.Lock()
-    # sync_ps = SyncParameters(lock)
+    sync_ps = SyncParameters(lock)
+    model = IMPALA(action_size=args.action_size)
+    sync_ps.push(model.state_dict())
 
-    # env_name = 'CartPole-v1'
-    # args.game_name = env_name
-    # env_args = {'game_name': args.game_name, 'seed': args.seed}
-    # action_size = get_action_size(CartPole, env_args)
-    # args.action_size = action_size
-    # env = EnvironmentProxy(CartPole,env_args)
-    # actor(0,ps,data,env,args)
-    # learner(model,data,ps,args)
-
-
-
-    # env = EnvironmentProxy(Atari,env_args)
-    # actor(0,ps,data,env,args)
-    # learner(model,data,ps,args)
-
-    # env = EnvironmentProxy(CartPole,env_args)
-    # actor(0,ps,data,env,args,hidden_size)
-    # learner(model,data,ps,args)
-
+    with ThreadPoolExecutor(max_workers=args.actors + 1) as executor:
+        # actors
+        thread_pool = [executor.submit(actor, idx, experience_queue, sync_ps, envs[idx], args) for idx in range(args.actors)]
+        # learner
+        thread_pool.append(executor.submit(learner, model, experience_queue, sync_ps, args))
+        
+        # synchronous learning and actors
+        for thread in thread_pool:
+            thread.result()
+   
+    '''
     # Optional Section
 
-    # optional : using 4-actor process 
-    experience_queue = mp.Queue(maxsize=1)
+    import torch.multiprocessing as mp
+
+    mp.set_start_method('spawn')
+    
+    # optional : using 4-actor other process 
+    experience_queue = mp.Queue()
     lock = mp.Lock()
     sync_ps = SyncParameters(lock)
     model = IMPALA(action_size=args.action_size)
     sync_ps.push(model.state_dict())
     
-    # environments of multi-process pool paired actors
-    envs = [EnvironmentProxy(Atari, env_args)
+    # environments of multi-process paired actors
+    envs = [EnvironmentProxy(CartPole, env_args)
             for idx in range(args.actors)]
     # learner
     learner = mp.Process(target=learner, args=(model, experience_queue, sync_ps, args))
@@ -110,9 +115,9 @@ if __name__ == '__main__':
     actors = [mp.Process(target=actor, args=(idx, experience_queue, sync_ps, envs[idx], args))
               for idx in range(args.actors)]
     
-    # syncronous leaner and actors
+    # synchronous learning and actors
     learner.start()
     [actor.start() for actor in actors]
     [actor.join() for actor in actors]
     learner.join()
-    
+    '''
