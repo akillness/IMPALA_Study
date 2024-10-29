@@ -111,7 +111,7 @@ class Atari:
             self.viewer.close()
             self.viewer = None
 
-
+# RL 과제를 위한 CartPole 게임환경(image) state
 class CartPole:
     def __init__(self, game_name, seed,reward_clip, max_episode_length=1e10, history_length=4, device='cpu'):
         self.device = device
@@ -136,20 +136,6 @@ class CartPole:
     def _reset_buffer(self):
         for _ in range(self.window):
             self.state_buffer.append(torch.zeros(4, device=self.device))
-
-    # def reset(self):
-    #     self._reset_buffer()
-    #     obs,info = self.env.reset()
-    #     obs = torch.tensor(obs, dtype=torch.float32, device=self.device)
-    #     self.state_buffer.append(obs)
-    #     return torch.stack(list(self.state_buffer), 0)
-
-    # def step(self, action):
-    #     obs, reward, done, truncated, info= self.env.step(action)
-    #     obs = torch.tensor(obs, dtype=torch.float32, device=self.device)
-    #     self.state_buffer.append(obs)
-    #     reward = max(min(reward, self.reward_clip), -self.reward_clip)
-    #     return torch.stack(list(self.state_buffer), 0), reward, done
 
     def reset(self):
         if self.life_termination:

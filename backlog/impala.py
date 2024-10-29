@@ -80,7 +80,7 @@ class IMPALA(nn.Module):
         self.coef = entropy_coef
         self.reward_clip = reward_clip
 
-        self.batch_size = 32 # ph -> graph
+        self.batch_size = 32
         self.s_ph = torch.zeros((self.unroll, *self.state_shape), dtype=torch.float32).to(self.device)
         self.ns_ph = torch.zeros((self.unroll, *self.state_shape), dtype=torch.float32).to(self.device)
         self.a_ph = torch.zeros((self.unroll), dtype=torch.int32).to(self.device)
