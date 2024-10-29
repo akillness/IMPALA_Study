@@ -8,6 +8,7 @@ from collections import deque
 import gym
 import numpy as np
 import math
+# from PIL import Image
 
 class Atari:
     def __init__(self, game_name, seed, reward_clip, max_episode_length=1e10, history_length=4,  device='cpu'):
@@ -82,7 +83,6 @@ class Atari:
                 done = True
             self.lives = lives
 
-        # Return state, reward, done
         # Other case is 'no_clip'
         if self.reward_clip == 'tanh':            
             squeezed = math.tanh(reward / 5.0)
@@ -92,6 +92,7 @@ class Atari:
         elif self.reward_clip =='abs_one':
             reward = max(min(reward, 1), -1)
         
+        # Return state, reward, done
         return torch.stack(list(self.state_buffer), 0), reward, done
 
     # Uses loss of life as terminal signal
@@ -112,39 +113,98 @@ class Atari:
 
 
 class CartPole:
-    def __init__(self, game_name, seed, max_episode_length=1e10, history_length=4, reward_clip=1, device='cpu'):
+    def __init__(self, game_name, seed,reward_clip, max_episode_length=1e10, history_length=4, device='cpu'):
         self.device = device
         self.env = gym.make(game_name)
         self.env.reset(seed=seed)
         np.random.seed(seed)
         self.env._max_episode_steps = max_episode_length
+        
+        actions = self.env.unwrapped.get_action_meanings() 
+        self.actions = dict(zip(range(len(actions)), actions))
         self.reward_clip = reward_clip
         self.window = history_length  # Number of frames to concatenate
         self.state_buffer = deque([], maxlen=history_length)
         self.training = True  # Consistent with model training mode
 
     def _get_state(self):
-        state = self.env.state
+        screen = self.env.render()        
+        grayscale = cv2.cvtColor(screen, cv2.COLOR_BGR2GRAY)
+        state = cv2.resize(grayscale, (84, 84), interpolation=cv2.INTER_LINEAR)
         return torch.tensor(state, dtype=torch.float32, device=self.device)
 
     def _reset_buffer(self):
         for _ in range(self.window):
             self.state_buffer.append(torch.zeros(4, device=self.device))
 
+    # def reset(self):
+    #     self._reset_buffer()
+    #     obs,info = self.env.reset()
+    #     obs = torch.tensor(obs, dtype=torch.float32, device=self.device)
+    #     self.state_buffer.append(obs)
+    #     return torch.stack(list(self.state_buffer), 0)
+
+    # def step(self, action):
+    #     obs, reward, done, truncated, info= self.env.step(action)
+    #     obs = torch.tensor(obs, dtype=torch.float32, device=self.device)
+    #     self.state_buffer.append(obs)
+    #     reward = max(min(reward, self.reward_clip), -self.reward_clip)
+    #     return torch.stack(list(self.state_buffer), 0), reward, done
+
     def reset(self):
-        self._reset_buffer()
-        obs,info = self.env.reset()
-        obs = torch.tensor(obs, dtype=torch.float32, device=self.device)
-        self.state_buffer.append(obs)
+        if self.life_termination:
+            self.life_termination = False  # Reset flag
+            observation, reward, done, _, info = self.env.step(0)
+        else:
+            # Reset internals
+            self._reset_buffer()
+            observation, reward, done, _, info = self.env.reset()
+            # Perform up to 30 random no-ops before starting
+            for _ in range(random.randrange(30)):
+                self.env.step(0)  # Assumes raw action 0 is always no-op
+                if done:
+                    observation, reward, done, truncated, info = self.env.reset()
+        
+        # Process and return "initial" state
+        observation = self._get_state()
+        self.state_buffer.append(observation)
+        self.lives = info.get('lives', None)
         return torch.stack(list(self.state_buffer), 0)
 
     def step(self, action):
-        obs, reward, done, _, info= self.env.step(action)
-        obs = torch.tensor(obs, dtype=torch.float32, device=self.device)
-        self.state_buffer.append(obs)
-        reward = max(min(reward, self.reward_clip), -self.reward_clip)
-        return torch.stack(list(self.state_buffer), 0), reward, done
+        # Repeat action 4 times, max pool over last 2 frames
+        frame_buffer = torch.zeros(2, 84, 84, device=self.device)
+        reward, done = 0, False
+        for t in range(4):
+            _, reward, done, _, info = self.env.step(self.actions.get(action))
+            if t == 2:
+                frame_buffer[0] = self._get_state()
+            elif t == 3:
+                frame_buffer[1] = self._get_state()
+            if done:
+                break
+        observation = frame_buffer.max(0)[0]
+        self.state_buffer.append(observation)
+        # Detect loss of life as terminal in training mode
+        if self.training:
+            lives = info.get('lives', None)
+            if self.lives > lives > 0:  # Lives > 0 for Q*bert
+                self.life_termination = not done  # Only set flag when not truly done
+                done = True
+            self.lives = lives
 
+        # Other case is 'no_clip'
+        if self.reward_clip == 'tanh':            
+            squeezed = math.tanh(reward / 5.0)
+            if reward < 0:
+                squeezed = 0.3 * squeezed
+            reward = squeezed * 0.5
+        elif self.reward_clip =='abs_one':
+            reward = max(min(reward, 1), -1)
+        
+        # Return state, reward, done
+        return torch.stack(list(self.state_buffer), 0), reward, done
+    
     def train(self):
         self.training = True
 
@@ -152,7 +212,7 @@ class CartPole:
         self.training = False
 
     def action_size(self):
-        return self.env.action_space.n
+        return len(self.actions)
 
     def close(self):
         self.env.close()
