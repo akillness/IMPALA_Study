@@ -9,7 +9,6 @@ import time
 from torch.utils.tensorboard import SummaryWriter
 
 
-
 '''
     # Target Policy : πρ¯
     Target policy는 학습자(Learner)가 최적화하려는 정책. 
@@ -36,21 +35,20 @@ from torch.utils.tensorboard import SummaryWriter
     V-trace는 액터들이 수집한 데이터를 학습자가 효과적으로 사용할 수 있도록 함. 
     :: 이를 통해 학습자는 더 안정적이고 효율적으로 학습할 수 있음.
 
-'''
+## Etc
 
-'''
     Single Task 
     ㄴ Hyper parameter combination 을 통해 학습가능함
     ㄴ method : cliping reward
 
-    # 수식
+    # 수식 - DeepMind Lab 환경
     def optimistic_asymmetric_clipping(reward):
         reward_tanh = torch.tanh(reward)
         clipped_reward = 0.3 * torch.min(reward_tanh, torch.tensor(0.0)) + 5.0 * torch.max(reward_tanh, torch.tensor(0.0))
         return clipped_reward
 '''
 
-def learner(model, data, ps, args):
+def learner(model, experience_queue, sync_ps, args):
     """Learner to get trajectories from Actors."""
     optimizer = optim.RMSprop(model.parameters(), lr=args.lr, eps=args.epsilon,
                               weight_decay=args.decay,
@@ -71,7 +69,7 @@ def learner(model, data, ps, args):
     while True:
         # check batch time
         start_batch_time = time.time()
-        trajectory = data.get()
+        trajectory = experience_queue.get()
         batch.append(trajectory)
         if torch.cuda.is_available():
             trajectory.cuda()
@@ -83,13 +81,13 @@ def learner(model, data, ps, args):
 
         if len(batch) < batch_size:
             continue
-        behaviour_logits, obs, actions, rewards, dones, hx = make_time_major(batch)
+        behaviour_logits, obs, actions, rewards, dones, hidden_state = make_time_major(batch)
         batch_time = time.time() - start_batch_time
 
         optimizer.zero_grad()
         # check forward time 
         start_forward_time = time.time()
-        logits, values = model(obs, actions, rewards, dones, hx=hx)
+        logits, values = model(obs, actions, rewards, dones, hidden_state=hidden_state)
         forward_time = time.time() - start_forward_time
 
         bootstrap_value = values[-1]
@@ -123,7 +121,7 @@ def learner(model, data, ps, args):
         optimizer.step()
         model.cpu()
         
-        ps.push(model.state_dict())
+        sync_ps.push(model.state_dict())
         if rewards.mean().item() > best:
             torch.save(model.state_dict(), save_path)
         
@@ -133,7 +131,7 @@ def learner(model, data, ps, args):
         # TensorBoard에 손실 및 보상 기록
         writer.add_scalars('Loss', {
             'total': loss.item(),
-            'cross_entropy': cross_entropy.mean().item(),
+            # 'cross_entropy': cross_entropy.mean().item(),
             'critic': critic_loss.item()
         }, step)
         

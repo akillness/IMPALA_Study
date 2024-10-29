@@ -1,7 +1,7 @@
 import torch
 
 
-class ParameterServer(object):
+class SyncParameters(object):
     def __init__(self, lock):
         self.lock = lock
         self.weight = None
@@ -20,7 +20,7 @@ def make_time_major(batch):
     actions = []
     rewards = []
     dones = []
-    hx = []
+    hidden_state = []
     logits = []
     for t in batch:
         obs.append(t.obs)
@@ -28,14 +28,14 @@ def make_time_major(batch):
         dones.append(t.dones)
         actions.append(t.actions)
         logits.append(t.logit)
-        hx.append(t.lstm_hx)
+        hidden_state.append(t.lstm_hidden_state)
     obs = torch.stack(obs).transpose(0, 1)
     actions = torch.stack(actions).transpose(0, 1)
     rewards = torch.stack(rewards).transpose(0, 1)
     dones = torch.stack(dones).transpose(0, 1)
     logits = torch.stack(logits).permute(1, 2, 0)
-    hx = torch.stack(hx).transpose(0, 1)
-    return logits, obs, actions, rewards, dones, hx
+    hidden_state = torch.stack(hidden_state).transpose(0, 1)
+    return logits, obs, actions, rewards, dones, hidden_state
 
 
 def combine_time_batch(x, last_action, reward, actor=False):

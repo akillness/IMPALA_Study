@@ -14,36 +14,7 @@ from __future__ import division
 from __future__ import print_function
 
 import torch
-
 import torch.nn.functional as F
-
-'''
-Target Policy
-Target policy는 학습자(Learner)가 최적화하려는 정책입니다. 
-이는 에이전트가 궁극적으로 따르기를 원하는 정책으로, 학습 과정에서 지속적으로 업데이트됩니다. 
-Target policy는 학습자가 수집한 데이터를 기반으로 가치 함수와 정책을 업데이트하는 데 사용됩니다. 
-이 정책은 주로 학습자의 신경망 파라미터로 표현됩니다
-
-Local Policy
-Local policy는 각 액터(actor)가 환경과 상호작용할 때 사용하는 정책입니다. 
-IMPALA에서는 여러 액터가 병렬로 환경과 상호작용하며 데이터를 수집합니다. 
-이때 각 액터는 자신의 로컬 정책(local policy)을 따릅니다. 
-로컬 정책은 주기적으로 학습자의 타겟 정책으로부터 업데이트되지만, 항상 최신 상태는 아닐 수 있습니다. 
-이는 분산 학습에서 발생하는 지연(latency) 때문입니다
-
-Behaviour Policy
-행동 정책은 에이전트가 환경에서 어떤 행동을 선택할지를 결정하는 정책입니다. 
-IMPALA에서는 여러 개의 액터(actor)가 환경과 상호작용하며 데이터를 수집합니다. 
-이 액터들은 행동 정책을 따르며, 이 정책은 학습자(learner)에 의해 주기적으로 업데이트됩니다. 
-행동 정책은 주로 탐험(exploration)과 활용(exploitation) 사이의 균형을 맞추기 위해 설계됩니다.
-
-Value Function
-가치 함수는 특정 상태에서의 기대 보상을 추정하는 함수입니다. 
-IMPALA에서는 V-trace라는 오프-폴리시(off-policy) 보정 방법을 사용하여 가치 함수를 추정합니다. 
-V-trace는 액터들이 수집한 데이터를 학습자가 효과적으로 사용할 수 있도록 도와줍니다. 
-이를 통해 학습자는 더 안정적이고 효율적으로 학습할 수 있습니다.
-
-'''
 
 def log_probs_from_logits_and_actions(policy_logits, actions):
     """Computes action log-probs from policy logits and actions.
@@ -61,9 +32,6 @@ def log_probs_from_logits_and_actions(policy_logits, actions):
       A float32 tensor of shape [T, B] corresponding to the sampling log
       probability of the chosen action w.r.t. the policy.
     """
-    # policy_logits = tf.convert_to_tensor(policy_logits, dtype=tf.float32)
-    # actions = tf.convert_to_tensor(actions, dtype=tf.int32)
-
     assert len(policy_logits.shape) == 3, "policy_logits should have rank 3"
     assert len(actions.shape) == 2, "actions should have rank 2"
 
@@ -300,7 +268,6 @@ def from_importance_weights(
         values_t_plus_1 = torch.cat([values[1:], bootstrap_value.unsqueeze(0)], dim=0)
         deltas = clipped_rhos * (rewards + discounts * values_t_plus_1 - values)
         
-        # 2024.10.29 
         vs_minus_v_xs = torch.zeros_like(values)
         vs_minus_v_xs[-1] = deltas[-1]
         

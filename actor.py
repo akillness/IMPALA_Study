@@ -20,7 +20,7 @@ class Trajectory(object):
         self.logit = []
         self.last_actions = []
         self.actor_id = None
-        self.lstm_hx = None
+        self.lstm_hidden_state = None
 
     def append(self, state, action, reward, done, logit):
         self.obs.append(state)
@@ -40,7 +40,7 @@ class Trajectory(object):
         self.obs = self.obs.cuda()
         self.actions = self.actions.cuda()
         self.dones = self.dones.cuda()
-        self.lstm_hx = self.lstm_hx.cuda()
+        self.lstm_hidden_state = self.lstm_hidden_state.cuda()
         self.rewards = self.rewards.cuda()
         self.logit = self.logit.cuda()
 
@@ -49,7 +49,7 @@ class Trajectory(object):
         self.obs = self.obs.to(device)
         self.actions = self.actions.to(device)
         self.dones = self.dones.to(device)
-        self.lstm_hx = self.lstm_hx.to(device)
+        self.lstm_hidden_state = self.lstm_hidden_state.to(device)
         self.rewards = self.rewards.to(device)
         self.logit = self.logit.to(device)
 
@@ -70,19 +70,19 @@ class Trajectory(object):
         return "ok" # End of episode when life lost "Yes"
 
 
-def actor(idx, ps, data, env, args):
+def actor(idx, experience_queue, sync_ps, env, args):
     """Simple actor """
     steps = 0
     length = args.length
     action_size = args.action_size
     model = IMPALA(action_size=action_size)
-    init_hx = torch.zeros((2, 1, 256), dtype=torch.float32)
+    init_lstm_state = torch.zeros((2, 1, 256), dtype=torch.float32)
     # save_path = args.save_path
     # load_path = args.load_path
     env.start()
     """Run the env for n steps and return a trajectory rollout."""
     obs = env.reset()
-    hx = init_hx
+    hidden_state = init_lstm_state
     logits = torch.zeros((1, action_size), dtype=torch.float32)
     last_action = torch.zeros((1, 1), dtype=torch.int64)
     reward = torch.tensor(0, dtype=torch.float32).view(1, 1)
@@ -91,13 +91,12 @@ def actor(idx, ps, data, env, args):
     persistent_state = init_state
     rewards = 0
     while True:
-        # print("Actor: {} Steps: {} Reward: {}".format(idx, steps, rewards))
-        model.load_state_dict(ps.pull())
-        # print("Actor: {} load".format(idx))
+        # Sync trained model
+        model.load_state_dict(sync_ps.pull())
+        
         rollout = Trajectory()
-        # print("Actor: {} trajectory init".format(idx))
         rollout.actor_id = idx
-        rollout.lstm_hx = hx.squeeze()
+        rollout.lstm_hidden_state = hidden_state.squeeze()
         rollout.append(*persistent_state)
         total_reward = 0
         with torch.no_grad():
@@ -106,17 +105,17 @@ def actor(idx, ps, data, env, args):
                     rewards += total_reward
                     persistent_state = rollout.get_last()
                     rollout.finish()
-                    data.put(rollout)
+                    experience_queue.put(rollout)
                     print("Actor: {} put Steps: {} rewards:{}".format(idx, steps, rewards))
                     break
                 if done:
                     rewards = 0.
                     steps = 0
-                    hx = init_hx
+                    hidden_state = init_lstm_state
                     __, last_action, reward, done, _ = init_state
                     obs = env.reset()
-                action, logits, hx = model(obs.unsqueeze(0), last_action, reward,
-                                           done, hx, actor=True)
+                action, logits, hidden_state = model(obs.unsqueeze(0), last_action, reward,
+                                           done, hidden_state, actor=True)
                 obs, reward, done = env.step(action)
                 total_reward += reward
                 last_action = torch.tensor(action, dtype=torch.int64).view(1, 1)
