@@ -64,8 +64,8 @@ def log_probs_from_logits_and_actions(policy_logits, actions):
     # policy_logits = tf.convert_to_tensor(policy_logits, dtype=tf.float32)
     # actions = tf.convert_to_tensor(actions, dtype=tf.int32)
 
-    assert len(policy_logits.shape) == 3
-    assert len(actions.shape) == 2
+    assert len(policy_logits.shape) == 3, "policy_logits should have rank 3"
+    assert len(actions.shape) == 2, "actions should have rank 2"
 
     return -F.cross_entropy(policy_logits, actions, reduction='none')
 
@@ -135,6 +135,7 @@ def from_logits(behaviour_policy_logits, target_policy_logits, actions,
     behaviour_action_log_probs = log_probs_from_logits_and_actions(
         behaviour_policy_logits, actions)
     log_rhos = target_action_log_probs - behaviour_action_log_probs
+
     vs, pg_advantages = from_importance_weights(
         log_rhos=log_rhos,
         discounts=discounts,
@@ -145,6 +146,53 @@ def from_logits(behaviour_policy_logits, target_policy_logits, actions,
         clip_pg_rho_threshold=clip_pg_rho_threshold)
     return vs, pg_advantages
 
+    # transpose_log_rhos = log_rhos.transpose(0, 1)
+    # transpose_discounts = discounts.transpose(0, 1)
+    # transpose_rewards = rewards.transpose(0, 1)
+    # transpose_values = values.transpose(0, 1)
+    # transpose_bootstrap_value = bootstrap_value.transpose(0, 1)
+
+    # transpose_vs, transpose_clipped_rho = from_importance_weights(
+    #     log_rhos=transpose_log_rhos,
+    #     discounts=transpose_discounts,
+    #     rewards=transpose_rewards,
+    #     values=transpose_values,
+    #     bootstrap_value=transpose_bootstrap_value[-1],
+    #     clip_rho_threshold=clip_rho_threshold,
+    #     clip_pg_rho_threshold=clip_pg_rho_threshold)
+
+    # return transpose_vs, transpose_clipped_rho
+
+# def log_probs_from_softmax_and_actions(policy_softmax, actions, action_size):
+#     onehot_action = F.one_hot(actions.long(), action_size).float()
+#     selected_softmax = torch.sum(policy_softmax * onehot_action, dim=2)
+#     log_prob = torch.log(selected_softmax)
+#     return log_prob
+
+# def from_softmax(behavior_policy_softmax, target_policy_softmax, actions,
+#                  discounts, rewards, values, bootstrap_value, action_size,
+#                  clip_rho_threshold=1.0, clip_pg_rho_threshold=1.0):
+            
+#     target_action_log_probs = log_probs_from_softmax_and_actions(target_policy_softmax, actions, action_size)
+#     behavior_action_log_probs = log_probs_from_softmax_and_actions(behavior_policy_softmax, actions, action_size)
+#     log_rhos = target_action_log_probs - behavior_action_log_probs
+
+#     transpose_log_rhos = log_rhos.transpose(0, 1)
+#     transpose_discounts = discounts.transpose(0, 1)
+#     transpose_rewards = rewards.transpose(0, 1)
+#     transpose_values = values.transpose(0, 1)
+#     transpose_bootstrap_value = bootstrap_value.transpose(0, 1)
+
+#     transpose_vs, transpose_clipped_rho = from_importance_weights(
+#         log_rhos=transpose_log_rhos,
+#         discounts=transpose_discounts,
+#         rewards=transpose_rewards,
+#         values=transpose_values,
+#         bootstrap_value=transpose_bootstrap_value[-1],
+#         clip_rho_threshold=clip_rho_threshold,
+#         clip_pg_rho_threshold=clip_pg_rho_threshold)
+
+#     return transpose_vs, transpose_clipped_rho
 
 def from_importance_weights(
         log_rhos, discounts, rewards, values, bootstrap_value,
@@ -210,16 +258,17 @@ def from_importance_weights(
 
     with torch.no_grad():
         rhos = torch.exp(log_rhos)
+
         if clip_rho_threshold is not None:
             clipped_rhos = torch.min(clip_rho_threshold, rhos)
         else:
             clipped_rhos = rhos
 
         cs = torch.min(torch.ones_like(rhos), rhos)
+        
         # Append bootstrapped value to get [v1, ..., v_t+1]
-        values_t_plus_1 = torch.cat((values, bootstrap_value.unsqueeze(0)), dim=0)
-        # deltas = clipped_rhos * (rewards + discounts * values_t_plus_1 - values)
-
+        # values_t_plus_1 = torch.cat((values, bootstrap_value.unsqueeze(0)), dim=0)
+        '''
         # Note that all sequences are reversed, computation starts from the back.
         # V-trace vs are calculated through a scan from the back to the beginning
         # of the given trajectory.
@@ -232,14 +281,36 @@ def from_importance_weights(
                         (rewards[j] + discounts[j] * values_t_plus_1[j + 1] - values[j]))
             vs.append(v_s)
         vs = torch.stack(vs, dim=0)
+
         # Advantage for policy gradient.
         if clip_pg_rho_threshold is not None:
             clipped_pg_rhos = torch.min(clip_pg_rho_threshold, rhos)
         else:
             clipped_pg_rhos = rhos
+
         pg_advantages = (
                 clipped_pg_rhos * (rewards + discounts * torch.cat(
             (vs[1:], bootstrap_value.unsqueeze(0)), dim=0) - values))
 
         # Make sure no gradients backpropagated through the returned values.
         return vs, pg_advantages
+        '''
+
+        # 2024.10.29 
+        values_t_plus_1 = torch.cat([values[1:], bootstrap_value.unsqueeze(0)], dim=0)
+        deltas = clipped_rhos * (rewards + discounts * values_t_plus_1 - values)
+        
+        # 2024.10.29 
+        vs_minus_v_xs = torch.zeros_like(values)
+        vs_minus_v_xs[-1] = deltas[-1]
+        
+        for t in reversed(range(len(discounts) - 1)):
+            vs_minus_v_xs[t] = deltas[t] + discounts[t] * cs[t] * vs_minus_v_xs[t + 1]
+        
+        vs = vs_minus_v_xs + values
+        
+        pg_advantages = clipped_rhos * (rewards + discounts * bootstrap_value - values)
+
+        return vs, pg_advantages
+        
+        

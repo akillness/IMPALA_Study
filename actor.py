@@ -67,7 +67,7 @@ class Trajectory(object):
         return len(self.rewards)
 
     def __repr__(self):
-        return "ok"
+        return "ok" # End of episode when life lost "Yes"
 
 
 def actor(idx, ps, data, env, args):

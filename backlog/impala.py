@@ -112,7 +112,7 @@ class IMPALA(nn.Module):
             behavior_policy_softmax=self.behavior_policy,
             target_policy_softmax=self.policy,
             actions=self.a_ph, discounts=self.discounts, rewards=self.clipped_rewards,
-            values=self.value, next_value=self.next_value, action_size=self.output_size).to(self.device)
+            values=self.value, bootstrap_value=self.next_value, action_size=self.output_size).to(self.device)
 
         self.vs = self.transpose_vs.transpose(0, 1)
         self.rho = self.transpose_clipped_rho.transpose(0, 1)

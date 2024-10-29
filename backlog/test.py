@@ -20,7 +20,7 @@
 """Actor to generate trajactories"""
 
 import torch
-from model import IMPALA
+from model_modify import IMPALA
 
 
 class Trajectory(object):

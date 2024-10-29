@@ -7,9 +7,10 @@ from collections import deque
 
 import gym
 import numpy as np
+import math
 
 class Atari:
-    def __init__(self, game_name, seed, max_episode_length=1e10, history_length=4, reward_clip=1, device='cpu'):
+    def __init__(self, game_name, seed, reward_clip, max_episode_length=1e10, history_length=4,  device='cpu'):
         self.device = device
         self.ale = atari_py.ALEInterface()
         self.ale.setInt('random_seed', seed)
@@ -28,11 +29,14 @@ class Atari:
         self.training = True  # Consistent with model training mode
         self.viewer = None
 
+    # grayscale : yes
     def _get_state(self):
         state = cv2.resize(self.ale.getScreenGrayscale(), (84, 84), interpolation=cv2.INTER_LINEAR)
         return torch.tensor(state, dtype=torch.float32, device=self.device).div_(255)
-
-    def _reset_buffer(self):
+    
+    # width, height : 84, 84
+    # frame stacking : 4
+    def _reset_buffer(self): 
         for _ in range(self.window):
             self.state_buffer.append(torch.zeros(84, 84, device=self.device))
 
@@ -77,8 +81,17 @@ class Atari:
                 self.life_termination = not done  # Only set flag when not truly done
                 done = True
             self.lives = lives
+
         # Return state, reward, done
-        reward = max(min(reward, self.reward_clip), -self.reward_clip)
+        # Other case is 'no_clip'
+        if self.reward_clip == 'tanh':            
+            squeezed = math.tanh(reward / 5.0)
+            if reward < 0:
+                squeezed = 0.3 * squeezed
+            reward = squeezed * 0.5
+        elif self.reward_clip =='abs_one':
+            reward = max(min(reward, 1), -1)
+        
         return torch.stack(list(self.state_buffer), 0), reward, done
 
     # Uses loss of life as terminal signal
