@@ -6,7 +6,7 @@ from utils import reshape_stacked_state_dim
 
 
 class IMPALA(nn.Module):
-    def __init__(self, action_size=16, input_channels=4, hidden_size=128): # 512
+    def __init__(self, action_size=16, input_channels=4, hidden_size=256): # 512
         super(IMPALA, self).__init__()
         self.action_space = action_size
         # self.conv1 = nn.Conv2d(input_channels, 32, 8, stride=4, padding=1)
@@ -14,8 +14,7 @@ class IMPALA(nn.Module):
         # self.conv3 = nn.Conv2d(64, 64, 3)
         # self.fc = nn.Linear(3136, hidden_size)
 
-        self.fc = nn.Linear(16,104)
-        self.fc1 = nn.Linear(104,hidden_size)
+        self.fc = nn.Linear(16,hidden_size)
         self.lstm = nn.LSTMCell(hidden_size + action_size + 1, 256)
         self.actorcritic = ActorCritic(action_size,256)
 
@@ -36,7 +35,6 @@ class IMPALA(nn.Module):
 
         input_tensor = input_tensor.view(input_tensor.shape[0], -1)
         input_tensor = F.leaky_relu(self.fc(input_tensor), inplace=True)
-        input_tensor = F.leaky_relu(self.fc1(input_tensor), inplace=True)
         input_tensor = torch.cat((input_tensor, reward, last_action), dim=1)
         input_tensor = input_tensor.view(seq_len, batch_size, -1)
 

@@ -81,6 +81,8 @@ if __name__ == '__main__':
     model = IMPALA(action_size=args.action_size)
     sync_ps.push(model.state_dict())
 
+    # idx=0
+    # actor(idx, experience_queue, sync_ps, envs[idx], args)
     # max workers : actors + learner
     with ThreadPoolExecutor(max_workers=args.actors + 1) as executor:
         # actors
