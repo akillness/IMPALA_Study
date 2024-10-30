@@ -2,32 +2,41 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from utils import reshape_history_dim
+from utils import reshape_stacked_state_dim
 
 
 class IMPALA(nn.Module):
-    def __init__(self, action_size=16, input_channels=4, hidden_size=512):
+    def __init__(self, action_size=16, input_channels=4, hidden_size=128): # 512
         super(IMPALA, self).__init__()
         self.action_space = action_size
-        self.conv1 = nn.Conv2d(input_channels, 32, 8, stride=4, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
-        self.conv3 = nn.Conv2d(64, 64, 3)
-        self.fc = nn.Linear(3136, hidden_size)
+        # self.conv1 = nn.Conv2d(input_channels, 32, 8, stride=4, padding=1)
+        # self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
+        # self.conv3 = nn.Conv2d(64, 64, 3)
+        # self.fc = nn.Linear(3136, hidden_size)
+
+        self.fc = nn.Linear(16,104)
+        self.fc1 = nn.Linear(104,hidden_size)
         self.lstm = nn.LSTMCell(hidden_size + action_size + 1, 256)
-        self.actorcritic = ActorCritic(action_size,hidden_size//2)
+        self.actorcritic = ActorCritic(action_size,256)
 
     def forward(self, input_tensor, last_action, reward, done_flags, hidden_state=None, actor=False):
         # state 의 trajectory의 길이 단위별로 history 설정 및 batch size 만큼 차원변경
         # state 의 history-4 stack
-        seq_len, batch_size, input_tensor, last_action, reward = reshape_history_dim(input_tensor, last_action, reward, actor)
+        seq_len, batch_size, input_tensor, last_action, reward = reshape_stacked_state_dim(input_tensor, last_action, reward, actor)
         last_action = torch.zeros(last_action.shape[0], self.action_space,
                                   dtype=torch.float32, device=input_tensor.device).scatter_(1, last_action, 1)
         # 3-layer conv
-        input_tensor = F.leaky_relu(self.conv1(input_tensor), inplace=True)
-        input_tensor = F.leaky_relu(self.conv2(input_tensor), inplace=True)
-        input_tensor = F.leaky_relu(self.conv3(input_tensor), inplace=True)
+        # input_tensor = F.leaky_relu(self.conv1(input_tensor), inplace=True)
+        # input_tensor = F.leaky_relu(self.conv2(input_tensor), inplace=True)
+        # input_tensor = F.leaky_relu(self.conv3(input_tensor), inplace=True)
+        # input_tensor = input_tensor.view(input_tensor.shape[0], -1)
+        # input_tensor = F.leaky_relu(self.fc(input_tensor), inplace=True)
+        # input_tensor = torch.cat((input_tensor, reward, last_action), dim=1)
+        # input_tensor = input_tensor.view(seq_len, batch_size, -1)
+
         input_tensor = input_tensor.view(input_tensor.shape[0], -1)
         input_tensor = F.leaky_relu(self.fc(input_tensor), inplace=True)
+        input_tensor = F.leaky_relu(self.fc1(input_tensor), inplace=True)
         input_tensor = torch.cat((input_tensor, reward, last_action), dim=1)
         input_tensor = input_tensor.view(seq_len, batch_size, -1)
 
@@ -41,7 +50,7 @@ class IMPALA(nn.Module):
             lstm_outputs.append(hidden_state[0])
             hidden_state = torch.stack(hidden_state, 0)
         input_tensor = torch.cat(lstm_outputs, 0)
-        logits, values = self.actorcritic(input_tensor, actor)
+        logits, values = self.actorcritic(input_tensor)
 
         logits[torch.isnan(logits)] = 1e-12
         if not actor:
@@ -52,12 +61,21 @@ class IMPALA(nn.Module):
 
 
 class ActorCritic(nn.Module):
-    def __init__(self, action_space, hidden_size):
+    def __init__(self, action_size, hidden_size):
         super().__init__()
-        self.actor_linear = nn.Linear(hidden_size, action_space)
+        # self.fc1 = nn.Linear(action_size,24)
+        # self.fc2 = nn.Linear(24,24)
+
+        # self.fc1 = nn.Linear(action_size,hidden_size)
+        # self.fc2 = nn.Linear(hidden_size,hidden_size)
+
+        self.actor_linear = nn.Linear(hidden_size, action_size)
         self.critic_linear = nn.Linear(hidden_size, 1)
 
-    def forward(self, x, actor):
+    def forward(self, x):
+        # x = torch.relu(self.fc1(x))
+        # x = torch.relu(self.fc2(x))
+
         logits = self.actor_linear(x)
         values = self.critic_linear(x)
         return logits, values

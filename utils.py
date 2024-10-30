@@ -1,18 +1,5 @@
 import torch
 
-class SyncParameters(object):
-    def __init__(self, lock):
-        self.lock = lock
-        self.weight = None
-
-    def pull(self):
-        with self.lock:
-            return self.weight
-
-    def push(self, weigth):
-        with self.lock:
-            self.weight = weigth
-
 def transpose_batch(batch):
     obs = []
     actions = []
@@ -35,12 +22,12 @@ def transpose_batch(batch):
     hidden_state = torch.stack(hidden_state).transpose(0, 1)
     return logits, obs, actions, rewards, dones, hidden_state
 
-def reshape_history_dim(x, last_action, reward, actor=False):
+def reshape_stacked_state_dim(x, last_action, reward, actor=False):
     if actor:
         return 1, 1, x, last_action, reward
-    seq_len = x.shape[0]
-    bs = x.shape[1]
-    x = x.reshape(seq_len * bs, *x.shape[2:])
-    last_action = last_action.reshape(seq_len * bs, -1)
-    reward = reward.reshape(seq_len * bs, 1)
-    return seq_len, bs, x, last_action, reward
+    stacked_state_len = x.shape[0]
+    batch_size = x.shape[1]
+    x = x.reshape(stacked_state_len * batch_size, *x.shape[2:])
+    last_action = last_action.reshape(stacked_state_len * batch_size, -1)
+    reward = reward.reshape(stacked_state_len * batch_size, 1)
+    return stacked_state_len, batch_size, x, last_action, reward

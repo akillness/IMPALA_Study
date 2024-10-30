@@ -1,16 +1,16 @@
 
 import argparse
 
-from environment import CartPole_img,EnvironmentThread,get_action_size
+
+from proxy import *
+from environment import CartPole_img,CartPole,get_action_size
 
 from model import IMPALA
 from actor import actor
 from learner import learner
 
-import threading, queue
+# import threading, queue
 from concurrent.futures import ThreadPoolExecutor
-
-from utils import SyncParameters
 
 # IMPALA : Importance Weighted Actor-Learner Architecture ( vs A3C )
 # - Actor
@@ -25,7 +25,7 @@ from utils import SyncParameters
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--actors", type=int, default=1,
+    parser.add_argument("--actors", type=int, default=4,
                         help="the number of actors to start, default is 8")
     parser.add_argument("--seed", type=int, default=20,
                         help="the seed of random, default is 20")
@@ -35,12 +35,12 @@ if __name__ == '__main__':
                         help='Number of steps to run the agent')
     parser.add_argument('--total_steps', type=int, default=80000000,
                         help='Number of steps to run the agent')
-    parser.add_argument('--batch_size', type=int, default=32,
+    parser.add_argument('--batch_size', type=int, default=48,
                         help='Number of steps to run the agent')
     parser.add_argument("--gamma", type=float, default=0.99,
                         help="the discount factor, default is 0.99")
-    parser.add_argument("--lr", type=float, default=0.0006,
-                        help="Learning rate, default is 0.0006")
+    parser.add_argument("--lr", type=float, default=0.001,
+                        help="Learning rate, default is 0.001")
     parser.add_argument("--entropy_cost", type=float, default=0.00025,
                         help="Entropy cost/multiplier, default is 0.00025")
     parser.add_argument("--baseline_cost", type=float, default=.5,
@@ -57,7 +57,7 @@ if __name__ == '__main__':
                         help='Set the path to load trained model parameters')
     parser.add_argument('--log_dir', type=str, default="./runs/",
                         help='Set the path to check learning state using tensorboard')    
-    parser.add_argument('--reward_clip', type=str, default="tanh",
+    parser.add_argument('--reward_clip', type=str, default="abs_one",
                         help='Set clipping reward type, default is "abs_one" (tanh,abs_one,no_clip)')
 
     # global gradient norm : 40
@@ -74,10 +74,8 @@ if __name__ == '__main__':
     # env_name = 'CartPole-v1'   
     experience_queue = queue.Queue()
     lock = threading.Lock()
-    envs = [EnvironmentThread(CartPole_img, env_args)
+    envs = [EnvThread(CartPole, env_args)
             for idx in range(args.actors)]
-
-    # env = CartPole(env_args['game_name'],env_args['seed'],env_args['reward_clip'])
     
     sync_ps = SyncParameters(lock)
     model = IMPALA(action_size=args.action_size)
@@ -97,7 +95,8 @@ if __name__ == '__main__':
     """
     # Optional Section
 
-    from environment import CartPole, get_action_size, EnvironmentProcess
+    from proxy import EnvironmentProcess
+    from environment import CartPole, get_action_size
 
     import torch.multiprocessing as mp
 

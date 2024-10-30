@@ -187,8 +187,8 @@ def from_importance_weights(
         cs = torch.min(torch.ones_like(rhos), rhos)
         
         # Append bootstrapped value to get [v1, ..., v_t+1]
-        # values_t_plus_1 = torch.cat((values, bootstrap_value.unsqueeze(0)), dim=0)
-        '''
+        values_t_plus_1 = torch.cat((values, bootstrap_value.unsqueeze(0)), dim=0)
+        
         # Note that all sequences are reversed, computation starts from the back.
         # V-trace vs are calculated through a scan from the back to the beginning
         # of the given trajectory.
@@ -231,5 +231,6 @@ def from_importance_weights(
         pg_advantages = clipped_rhos * (rewards + discounts * bootstrap_value - values)
 
         return vs, pg_advantages
+        '''
         
         

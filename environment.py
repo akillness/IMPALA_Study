@@ -7,9 +7,6 @@ import random
 
 import cv2
 
-import threading
-import queue
-
 from collections import deque
 
 import atari_py
@@ -136,9 +133,9 @@ class CartPole_img:
         self.life_termination = False
         self.actions = self.env.action_space 
         self.reward_clip = reward_clip
-        self.window = history_length  # Number of frames to concatenate
+        self.history_length = history_length  
         self.state_buffer = deque([], maxlen=history_length)
-        self.training = True  # Consistent with model training mode
+        self.training = True  
 
     def _get_state(self):
         screen = self.env.render()        
@@ -147,27 +144,13 @@ class CartPole_img:
         return torch.tensor(state, dtype=torch.float32, device=self.device)
 
     def _reset_buffer(self):
-        for _ in range(self.window):
+        for _ in range(self.history_length):
             self.state_buffer.append(torch.zeros(84, 84, device=self.device))
 
     def reset(self):
-        if self.life_termination:
-            self.life_termination = False  # Reset flag
-            _, _, done, _, info = self.env.step(0)
-        else:
-            # Reset internals
-            self._reset_buffer()
-            state, _ = self.env.reset()
-            # Perform up to 5 random no-ops before starting
-            for __ in range(random.randrange(5)):
-                _, _, done, _, info = self.env.step(0)  # Assumes raw action 0 is always no-op
-                if done:
-                    state, _ = self.env.reset()
-        
-        # Process and return "initial" state
+        self._reset_buffer()
         observation = self._get_state()
         self.state_buffer.append(observation)
-        self.lives = info.get('lives', None)
         return torch.stack(list(self.state_buffer), 0)
 
     def step(self, action):
@@ -216,126 +199,77 @@ class CartPole_img:
     def close(self):
         self.env.close()
 
-class EnvironmentThread(object):
-    def __init__(self, env_class, constructor_kwargs):
-        self.env_class = env_class
-        self._constructor_kwargs = constructor_kwargs
+class CartPole:
+    def __init__(self, game_name, seed,reward_clip, max_episode_length=1e10, history_length=4, device='cpu'):
+        self.device = device
+        self.env = gym.make(game_name)
+        self.env.reset(seed=seed)
+        np.random.seed(seed)
+        self.env._max_episode_steps = max_episode_length
+        
+        self.actions = self.env.action_space 
+        self.reward_clip = reward_clip
+        self.history_length = history_length
+        self.state_buffer = deque([], maxlen=history_length)
+        self.training = True
 
-    def start(self):
-        self.command_queue = queue.Queue()
-        self.result_queue = queue.Queue()
-        self._thread = threading.Thread(target=self.worker, args=(self.env_class, self._constructor_kwargs, self.command_queue, self.result_queue))
-        self._thread.start()
-        result = self.result_queue.get()
-        if isinstance(result, Exception):
-            raise result
+    def _get_state(self):
+        state, info = self.env.reset()
+        return torch.tensor(state,dtype=torch.float32, device=self.device), info
 
-    def close(self):
-        try:
-            self.command_queue.put([2, None])
-            self._thread.join()
-        except IOError:
-            raise IOError
-        print("closed env type of normal")
-
-    def reset(self):
-        self.command_queue.put([0, None])
-        state = self.result_queue.get()
-        if state is None:
-            raise ValueError
-        return state
-
-    def step(self, action):
-        self.command_queue.put([1, action])
-        state, reward, terminal = self.result_queue.get()
-        return state, reward, terminal
-
-    def worker(self, env_class, constructor_kwargs, command_queue, result_queue):
-        try:
-            env = env_class(**constructor_kwargs)
-            result_queue.put(None)  # Ready.
-            while True:
-                # Receive request.
-                command, arg = command_queue.get()
-                if command == 0:
-                    result_queue.put(env.reset())
-                    result_queue.task_done()
-                elif command == 1:
-                    result_queue.put(env.step(arg))
-                    result_queue.task_done()
-                elif command == 2:
-                    env.close()
-                    break
-                else:
-                    print("bad command: {}".format(command))
-        except Exception as e:
-            if 'env' in locals() and hasattr(env, 'close'):
-                try:
-                    env.close()
-                    print("closed error")
-                except:
-                    pass
-            result_queue.put(e)
-
-
-class EnvironmentProcess(object):
-    def __init__(self, env_class, constructor_kwargs):
-        self.env_class = env_class
-        self._constructor_kwargs = constructor_kwargs
-
-    def start(self):
-        self.conn, conn_child = mp.Pipe()
-        self._process = mp.Process(target=self.worker, args=(self.env_class, self._constructor_kwargs, conn_child))
-        self._process.start()
-        result = self.conn.recv()
-        if isinstance(result, Exception):
-            raise result
-
-    def close(self):
-        try:
-            self.conn.send((2, None))
-            self.conn.close()
-        except IOError:
-            raise IOError
-        print("closed env type of normal")
-        self._process.join()
+    def _reset_buffer(self):
+        for _ in range(self.history_length):
+            self.state_buffer.append(torch.zeros(4, device=self.device))
 
     def reset(self):
-        self.conn.send([0, None])
-        state = self.conn.recv()
-        if state is None:
-            raise ValueError
-        return state
+        
+        self._reset_buffer()
+        observation, info = self._get_state()
+        self.state_buffer.append(observation)
+        self.lives = info.get('lives', None)
+        return torch.stack(list(self.state_buffer), 0)
 
     def step(self, action):
-        self.conn.send([1, action])
-        state, reward, terminal = self.conn.recv()
-        return state, reward, terminal
+        # Repeat action 4 times, max pool over last 2 frames
+        frame_buffer = torch.zeros(2, 4, device=self.device)
+        reward, done = 0, False
+        for t in range(4):
+            _, reward, done, _, info = self.env.step(action)
+            if t == 2:
+                frame_buffer[0], _ = self._get_state()
+            elif t == 3:
+                frame_buffer[1], _ = self._get_state()
+            if done:
+                break
+        observation = frame_buffer.max(0)[0]
+        self.state_buffer.append(observation)
+        # Detect loss of life as terminal in training mode
+        if self.training:
+            lives = info.get('lives', None)
+            self.lives = lives
 
-    def worker(self, env_class, constructor_kwargs, conn):
-        try:
-            env = env_class(**constructor_kwargs)
-            conn.send(None)
-            while True:
-                command, arg = conn.recv()
-                if command == 0:
-                    conn.send(env.reset())
-                elif command == 1:
-                    conn.send(env.step(arg))
-                elif command == 2:
-                    env.close()
-                    conn.close()
-                    break
-                else:
-                    print("bad command: {}".format(command))
-        except Exception as e:
-            if 'env' in locals() and hasattr(env, 'close'):
-                try:
-                    env.close()
-                    print("closed error")
-                except:
-                    pass
-            conn.send(e)
+        # Other case is 'no_clip'
+        if self.reward_clip == 'tanh':            
+            squeezed = math.tanh(reward / 5.0)
+            if reward < 0:
+                squeezed = 0.3 * squeezed
+            reward = squeezed * 0.5
+        elif self.reward_clip =='abs_one':
+            reward = max(min(reward, 1), -1)
+        
+        # Return state, reward, done
+        return torch.stack(list(self.state_buffer), 0), reward, done
+    
+    def train(self):
+        self.training = True
 
+    def eval(self):
+        self.training = False
+
+    def action_size(self):
+        return self.actions.n
+
+    def close(self):
+        self.env.close()
 
 
