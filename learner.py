@@ -2,7 +2,6 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 
-from utils import transpose_batch
 import vtrace
 
 import time
@@ -47,6 +46,46 @@ from torch.utils.tensorboard import SummaryWriter
         clipped_reward = 0.3 * torch.min(reward_tanh, torch.tensor(0.0)) + 5.0 * torch.max(reward_tanh, torch.tensor(0.0))
         return clipped_reward
 '''
+
+def transpose_batch(batch):
+    obs = []
+    actions = []
+    rewards = []
+    dones = []
+    hidden_state = []
+    logits = []
+    for t in batch:
+        obs.append(t.obs)
+        rewards.append(t.rewards)
+        dones.append(t.dones)
+        actions.append(t.actions)
+        logits.append(t.logit)
+        hidden_state.append(t.lstm_hidden_state)
+    obs = torch.stack(obs).transpose(0, 1)
+    actions = torch.stack(actions).transpose(0, 1)
+    rewards = torch.stack(rewards).transpose(0, 1)
+    dones = torch.stack(dones).transpose(0, 1)
+    logits = torch.stack(logits).permute(1, 2, 0)
+    hidden_state = torch.stack(hidden_state).transpose(0, 1)
+    return logits, obs, actions, rewards, dones, hidden_state
+
+def compute_baseline_loss(advantages):
+    # Loss for the baseline, summed over the time dimension.
+    # Multiply by 0.5 to match the standard update rule:
+    # d(loss) / d(baseline) = advantage
+    return 0.5 * torch.sum(torch.square(advantages))
+
+def compute_entropy_loss(logits):
+    policy = F.softmax(logits, dim=-1)
+    log_policy = F.log_softmax(logits, dim=-1)
+    entropy_per_timestep = torch.sum(-policy * log_policy, dim=-1)
+    return -torch.sum(entropy_per_timestep)
+
+def compute_policy_gradient_loss(logits, actions, advantages):
+    cross_entropy = F.cross_entropy(logits, actions, reduction='none')
+    advantages = advantages.detach() 
+    policy_gradient_loss_per_timestep = cross_entropy * advantages
+    return torch.sum(policy_gradient_loss_per_timestep)
 
 def learner(model, experience_queue, sync_ps, args):
     """Learner to get trajectories from Actors."""
@@ -104,15 +143,18 @@ def learner(model, experience_queue, sync_ps, args):
             values=values,
             bootstrap_value=bootstrap_value)
         
+
         # policy gradient loss
-        cross_entropy = F.cross_entropy(logits, actions, reduction='none')
-        loss = (cross_entropy * pg_advantages.detach()).sum()
+        policy_gradient_loss = compute_policy_gradient_loss(logits,actions,pg_advantages)
+        loss = policy_gradient_loss
+        
         # baseline_loss, Weighted MSELoss
-        critic_loss = baseline_cost * .5 * (vs - values).pow(2).sum()
+        critic_loss = compute_baseline_loss(pg_advantages)
         loss += critic_loss
+
         # entropy_loss
-        entropy = -(-F.softmax(logits, 1) * F.log_softmax(logits, 1)).sum(-1).sum()
-        loss += entropy_cost * entropy
+        entropy = compute_entropy_loss(logits)
+        loss += entropy
 
         # check backward time
         start_backward_time = time.time()
@@ -130,10 +172,13 @@ def learner(model, experience_queue, sync_ps, args):
         importance_sampling_ratios = torch.exp(logits - behaviour_logits)
 
         # TensorBoard에 손실 및 보상 기록
-        writer.add_scalars('Loss', {
+        writer.add_scalars('Loss',{
             'total': loss.item(),
-            'critic': critic_loss.item()
+            'critic': critic_loss.item(),
+            'policy gradient': policy_gradient_loss.item(),
         }, step)
+
+        # writer.add_histogram('action',actions, step)
         
         writer.add_scalar('Entropy', entropy.item(), step)
         

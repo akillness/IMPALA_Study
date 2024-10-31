@@ -185,7 +185,8 @@ def from_importance_weights(
             clipped_rhos = rhos
 
         cs = torch.min(torch.ones_like(rhos), rhos)
-        
+
+        '''
         # Append bootstrapped value to get [v1, ..., v_t+1]
         values_t_plus_1 = torch.cat((values, bootstrap_value.unsqueeze(0)), dim=0)
         
@@ -216,7 +217,6 @@ def from_importance_weights(
         return vs, pg_advantages
         '''
 
-        # 2024.10.29 
         values_t_plus_1 = torch.cat([values[1:], bootstrap_value.unsqueeze(0)], dim=0)
         deltas = clipped_rhos * (rewards + discounts * values_t_plus_1 - values)
         
@@ -227,10 +227,18 @@ def from_importance_weights(
             vs_minus_v_xs[t] = deltas[t] + discounts[t] * cs[t] * vs_minus_v_xs[t + 1]
         
         vs = vs_minus_v_xs + values
-        
-        pg_advantages = clipped_rhos * (rewards + discounts * bootstrap_value - values)
 
+        # Advantage for policy gradient.
+        if clip_pg_rho_threshold is not None:
+            clipped_pg_rhos = torch.min(clip_pg_rho_threshold, rhos)
+        else:
+            clipped_pg_rhos = rhos
+        
+        vs_t_plus_1 = torch.cat(vs[1:], bootstrap_value.unsqueeze(0))
+        pg_advantages = (
+            clipped_pg_rhos * (rewards + discounts * vs_t_plus_1 - values))
+        
         return vs, pg_advantages
-        '''
+
         
         

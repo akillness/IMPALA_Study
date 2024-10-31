@@ -1,9 +1,3 @@
-# Copyright (c) 2018-present, Anurag Tiwari.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-"""Actor to generate trajactories"""
 
 import torch
 from model import IMPALA
@@ -116,11 +110,14 @@ def actor(idx, experience_queue, sync_ps, env, args):
 
                 action, logits, hidden_state = model(obs.unsqueeze(0), last_action, reward,
                                            done, hidden_state, actor=True)
+                
                 obs, reward, done = env.step(action)
                 total_reward += reward
+
                 last_action = torch.tensor(action, dtype=torch.int64).view(1, 1)
                 reward = torch.tensor(reward, dtype=torch.float32).view(1, 1)
                 done = torch.tensor(done, dtype=torch.bool).view(1, 1)
+
                 rollout.append(obs, last_action, reward, done, logits.detach())
                 steps += 1
 
