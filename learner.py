@@ -105,6 +105,7 @@ def learner(model, experience_queue, sync_ps, args):
     batch = []
     best = 0.
     step = 0
+    
     while True:
         # check batch time
         start_batch_time = time.time()
@@ -121,10 +122,13 @@ def learner(model, experience_queue, sync_ps, args):
 
         if len(batch) < batch_size:
             continue
+
+        # print(f"state : {trajectory}"
         behaviour_logits, obs, actions, rewards, dones, hidden_state = transpose_batch(batch)
         batch_time = time.time() - start_batch_time
 
         optimizer.zero_grad()
+        
         # check forward time 
         start_forward_time = time.time()
         logits, values = model(obs, actions, rewards, dones, hidden_state=hidden_state)
@@ -145,8 +149,7 @@ def learner(model, experience_queue, sync_ps, args):
         
 
         # policy gradient loss
-        policy_gradient_loss = compute_policy_gradient_loss(logits,actions,pg_advantages)
-        loss = policy_gradient_loss
+        loss = compute_policy_gradient_loss(logits,actions,pg_advantages)
         
         # baseline_loss, Weighted MSELoss
         critic_loss = compute_baseline_loss(pg_advantages)
@@ -175,12 +178,9 @@ def learner(model, experience_queue, sync_ps, args):
         writer.add_scalars('Loss',{
             'total': loss.item(),
             'critic': critic_loss.item(),
-            'policy gradient': policy_gradient_loss.item(),
+            'entropy': entropy.item(),
         }, step)
 
-        # writer.add_histogram('action',actions, step)
-        
-        writer.add_scalar('Entropy', entropy.item(), step)
         
         writer.add_scalars('Rewards', {
             'mean': rewards.mean().item(),

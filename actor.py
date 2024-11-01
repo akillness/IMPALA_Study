@@ -64,7 +64,6 @@ class Trajectory(object):
 
 
 def actor(idx, experience_queue, sync_ps, env, args):
-    """Simple actor """
     steps = 0
     length = args.length
     action_size = args.action_size
@@ -82,6 +81,7 @@ def actor(idx, experience_queue, sync_ps, env, args):
     init_state = (obs, last_action, reward, done, logits)
     persistent_state = init_state
     rewards = 0
+    
     while True:
         # Sync trained model
         model.load_state_dict(sync_ps.pull())
@@ -98,18 +98,19 @@ def actor(idx, experience_queue, sync_ps, env, args):
                     persistent_state = rollout.get_last()
                     rollout.finish()
                     # Queue trajectory data( all of state )
-                    experience_queue.put(rollout)
-                    print(f"Total Reward : {total_reward},  Trajectory Length :{rollout.length}, Actor : {idx}")
+                    experience_queue.put(rollout)                    
+                    print(f"Total Reward : {total_reward},  state :{persistent_state}, Actor : {idx}")
                     break
+
                 if done:
                     rewards = 0.
                     steps = 0
                     hidden_state = init_lstm_state
                     __, last_action, reward, done, _ = init_state
                     obs = env.reset()
-
-                action, logits, hidden_state = model(obs.unsqueeze(0), last_action, reward,
-                                           done, hidden_state, actor=True)
+                
+                action, logits, hidden_state = model(obs.unsqueeze(0).unsqueeze(1), last_action, reward, done, hidden_state, actor=True)
+                        
                 
                 obs, reward, done = env.step(action)
                 total_reward += reward

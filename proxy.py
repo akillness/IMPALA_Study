@@ -59,10 +59,10 @@ class EnvThread(object):
                 command, arg = command_queue.get()
                 if command == 0:
                     result_queue.put(env.reset())
-                    # result_queue.task_done()
+                    result_queue.task_done()
                 elif command == 1:
                     result_queue.put(env.step(arg))
-                    # result_queue.task_done()
+                    result_queue.task_done()
                 elif command == 2:
                     env.close()
                     break

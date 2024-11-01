@@ -9,6 +9,7 @@ from model import IMPALA
 from actor import actor
 from learner import learner
 
+import threading
 # import threading, queue
 from concurrent.futures import ThreadPoolExecutor
 
@@ -25,20 +26,18 @@ from concurrent.futures import ThreadPoolExecutor
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--actors", type=int, default=2,
+    parser.add_argument("--actors", type=int, default=4,
                         help="the number of actors to start, default is 8")
     parser.add_argument("--seed", type=int, default=20,
                         help="the seed of random, default is 20")
     parser.add_argument("--game_name", type=str, default='CartPole-v1',
                         help="the name of atari game, default is CartPole-v1")
-    # parser.add_argument("--game_name", type=str, default='breakout',
-    #                     help="the name of atari game, default is CartPole-v1")
     parser.add_argument('--length', type=int, default=20,
-                        help='Number of steps to run the agent')
+                        help='Number of Trajectories to get from the agent')
     parser.add_argument('--total_steps', type=int, default=80000000,
                         help='Number of steps to run the agent')
-    parser.add_argument('--batch_size', type=int, default=48,
-                        help='Number of steps to run the agent')
+    parser.add_argument('--batch_size', type=int, default=32,
+                        help='Number of Batch size to set ')
     parser.add_argument("--gamma", type=float, default=0.99,
                         help="the discount factor, default is 0.99")
     parser.add_argument("--lr", type=float, default=0.001,
@@ -51,7 +50,7 @@ if __name__ == '__main__':
                         help="RMSProp optimizer decay, default is .99")
     parser.add_argument("--momentum", type=float, default=0,
                         help="RMSProp momentum, default is 0")
-    parser.add_argument("--epsilon", type=float, default=0.01,
+    parser.add_argument("--epsilon", type=float, default=0.1,
                         help="RMSProp epsilon, default is 0.1")
     parser.add_argument('--save_path', type=str, default="./model/checkpoint.pt",
                         help='Set the path to save trained model parameters')
@@ -61,19 +60,16 @@ if __name__ == '__main__':
                         help='Set the path to check learning state using tensorboard')    
     parser.add_argument('--reward_clip', type=str, default="tanh",
                         help='Set clipping reward type, default is "abs_one" (tanh,abs_one,no_clip)')
-
-    # global gradient norm : 40
     
     args = parser.parse_args()
     env_args = {'game_name': args.game_name, 'seed': args.seed, 'reward_clip': args.reward_clip}
     action_size = get_action_size(CartPole, env_args)
-    # action_size = get_action_size(Atari, env_args)
     args.action_size = action_size    
 
     '''
     # Standard single-process
     '''
-    
+    """
     # env_name = 'CartPole-v1'   
     experience_queue = queue.Queue()
     lock = threading.Lock()
@@ -84,21 +80,16 @@ if __name__ == '__main__':
     model = IMPALA(action_size=args.action_size)
     sync_ps.push(model.state_dict())
 
-    idx=0
-    actor(idx, experience_queue, sync_ps, envs[idx], args)
-
-    learner(model, experience_queue, sync_ps, args)
-
     # max workers : actors + learner
-    # with ThreadPoolExecutor(max_workers=args.actors + 1) as executor:
-    #     # actors
-    #     thread_pool = [executor.submit(actor, idx, experience_queue, sync_ps, envs[idx], args) for idx in range(args.actors)]
-    #     # learner
-    #     thread_pool.append(executor.submit(learner, model, experience_queue, sync_ps, args))
+    with ThreadPoolExecutor(max_workers=args.actors + 1) as executor:
+        # actors
+        thread_pool = [executor.submit(actor, idx, experience_queue, sync_ps, envs[idx], args) for idx in range(args.actors)]
+        # learner
+        thread_pool.append(executor.submit(learner, model, experience_queue, sync_ps, args))
         
-    #     # synchronous learning and actors
-    #     for thread in thread_pool:
-    #         thread.result()
+        # synchronous learning and actors
+        for thread in thread_pool:
+            thread.result()
     
     """
     # Optional Section
@@ -134,5 +125,5 @@ if __name__ == '__main__':
     [actor.start() for actor in actors]
     [actor.join() for actor in actors]
     learner.join()
-    """
+    
     
