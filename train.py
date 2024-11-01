@@ -23,12 +23,27 @@ from concurrent.futures import ThreadPoolExecutor
     # ㄴstacking history-4, clipping reward
 # Distribution RL
 
+
+"""
+
+https://pytorch.org/ 이 링크에서 패키지 설치 필수.
+ㄴex) > pip3 install torch torchvision torchaudio
+
+예외 )
+ "Close error" 발생시 numpy 버전을 1.24.4 , 1.26 등 2.x 버전보다 아래 설치
+
+결과 ) Tensorboard 확인 가능, ./model/checkpoint.pt
+ㄴ > tensorboard --logdir=./runs/ 
+
+ㄴ reward 변동이 없는것으로보아, 학습이 안되는것 같습니다..
+"""
+
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--actors", type=int, default=4,
                         help="the number of actors to start, default is 8")
-    parser.add_argument("--seed", type=int, default=20,
+    parser.add_argument("--seed", type=int, default=23,
                         help="the seed of random, default is 20")
     parser.add_argument("--game_name", type=str, default='CartPole-v1',
                         help="the name of atari game, default is CartPole-v1")
@@ -69,7 +84,7 @@ if __name__ == '__main__':
     '''
     # Standard single-process
     '''
-    """
+    
     # env_name = 'CartPole-v1'   
     experience_queue = queue.Queue()
     lock = threading.Lock()
@@ -79,6 +94,15 @@ if __name__ == '__main__':
     sync_ps = SyncParameters(lock)
     model = IMPALA(action_size=args.action_size)
     sync_ps.push(model.state_dict())
+
+    idx  = 0
+    actor = threading.Thread(target=actor, args=(idx, experience_queue, sync_ps, envs[idx], args))
+    learner = threading.Thread(target=learner, args=(model, experience_queue, sync_ps, args))
+
+    learner.start()
+    actor.start()
+    actor.join()
+    learner.join()
 
     # max workers : actors + learner
     with ThreadPoolExecutor(max_workers=args.actors + 1) as executor:
@@ -90,6 +114,8 @@ if __name__ == '__main__':
         # synchronous learning and actors
         for thread in thread_pool:
             thread.result()
+
+
     
     """
     # Optional Section
@@ -125,5 +151,6 @@ if __name__ == '__main__':
     [actor.start() for actor in actors]
     [actor.join() for actor in actors]
     learner.join()
+    """
     
     

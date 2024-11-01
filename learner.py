@@ -47,7 +47,7 @@ from torch.utils.tensorboard import SummaryWriter
         return clipped_reward
 '''
 
-def transpose_batch(batch):
+def transpose_batch_to_stack(batch):
     obs = []
     actions = []
     rewards = []
@@ -88,7 +88,7 @@ def compute_policy_gradient_loss(logits, actions, advantages):
     return torch.sum(policy_gradient_loss_per_timestep)
 
 def learner(model, experience_queue, sync_ps, args):
-    """Learner to get trajectories from Actors."""
+    """Learner to get parameters from IMPALA"""
     optimizer = optim.RMSprop(model.parameters(), lr=args.lr, eps=args.epsilon,
                               weight_decay=args.decay,
                               momentum=args.momentum)
@@ -101,12 +101,13 @@ def learner(model, experience_queue, sync_ps, args):
     # TensorBoard SummaryWriter 초기화
     writer = SummaryWriter(log_dir=args.log_dir)
 
-    """Gets trajectories from actors and trains learner."""
+    
     batch = []
     best = 0.
     step = 0
     
     while True:
+        """Gets trajectory from experience of actors and trains learner."""
         # check batch time
         start_batch_time = time.time()
         # Dequeue trajectory data( all of state )
@@ -124,7 +125,7 @@ def learner(model, experience_queue, sync_ps, args):
             continue
 
         # print(f"state : {trajectory}"
-        behaviour_logits, obs, actions, rewards, dones, hidden_state = transpose_batch(batch)
+        behaviour_logits, obs, actions, rewards, dones, hidden_state = transpose_batch_to_stack(batch)
         batch_time = time.time() - start_batch_time
 
         optimizer.zero_grad()
