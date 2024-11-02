@@ -53,7 +53,7 @@ if __name__ == '__main__':
                         help='Number of Trajectories to get from the agent')
     parser.add_argument('--total_steps', type=int, default=80000000,
                         help='Number of steps to run the agent')
-    parser.add_argument('--batch_size', type=int, default=32,
+    parser.add_argument('--batch_size', type=int, default=8,
                         help='Number of Batch size to set ')
     parser.add_argument("--gamma", type=float, default=0.99,
                         help="the discount factor, default is 0.99")
