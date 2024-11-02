@@ -16,9 +16,9 @@ def get_action_size(env_class, env_args):
     del env
     return action_size
 
-# RL 과제를 위한 CartPole 게임환경(image) state
+# RL 과제를 위한 CartPole 게임환경
 class CartPole:
-    def __init__(self, game_name, seed,reward_clip, max_episode_length=1e10, history_length=4, device='cpu'):
+    def __init__(self, game_name, seed,max_episode_length=1e10, history_length=4, device='cpu'):
         self.device = device
         self.env = gym.make(game_name)
         self.env.reset(seed=seed)
@@ -26,7 +26,6 @@ class CartPole:
         self.env._max_episode_steps = max_episode_length
         
         self.actions = self.env.action_space 
-        self.reward_clip = reward_clip
         self.history_length = history_length
         self.state_buffer = deque([], maxlen=history_length)
         self.training = True
@@ -46,29 +45,9 @@ class CartPole:
         return torch.stack(list(self.state_buffer), 0)
 
     def step(self, action):
-        # Repeat action 10 times, max pool over last 2 frames
-        frame_buffer = torch.zeros(2, 4, device=self.device)
-        reward, done = 0, False
-        for t in range(10):
-            _, reward, done, _, info = self.env.step(action)
-            if t == 2:
-                frame_buffer[0], _ = self._get_state()
-            elif t == 3:
-                frame_buffer[1], _ = self._get_state()
-            if done:
-                break
-
-        observation = frame_buffer.max(0)[0]
+        state, reward, done, _, info = self.env.step(action)
+        observation = torch.tensor(state,dtype=torch.float32, device=self.device)
         self.state_buffer.append(observation)
-
-        # Other case is 'no_clip'
-        if self.reward_clip == 'tanh':            
-            squeezed = math.tanh(reward / 5.0)
-            if reward < 0:
-                squeezed = 0.3 * squeezed
-            reward = squeezed * 0.5
-        elif self.reward_clip =='abs_one':
-            reward = max(min(reward, 1), -1)
         
         # Return state, reward, done
         return torch.stack(list(self.state_buffer), 0), reward, done
