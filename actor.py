@@ -99,7 +99,7 @@ def actor(idx, experience_queue, sync_ps, env, args):
                     rollout.finish()
                     # Queue trajectory data( all of state )
                     experience_queue.put(rollout)                    
-                    print(f"Total Reward : {total_reward},  state :{persistent_state}, Actor : {idx}")
+                    print(f"Actor : {idx}, Step : {steps}, Total Reward : {total_reward}")
                     break
 
                 if done:

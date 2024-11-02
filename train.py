@@ -25,8 +25,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 """
+실행환경
+ㄴ pip install -r requirements.txt
 
-https://pytorch.org/ 이 링크에서 패키지 설치 필수.
+추가 ) https://pytorch.org/ 이 링크에서 패키지 설치 필수.
 ㄴex) > pip3 install torch torchvision torchaudio
 
 예외 )
@@ -35,7 +37,7 @@ https://pytorch.org/ 이 링크에서 패키지 설치 필수.
 결과 ) Tensorboard 확인 가능, ./model/checkpoint.pt
 ㄴ > tensorboard --logdir=./runs/ 
 
-ㄴ reward 변동이 없는것으로보아, 학습이 안되는것 같습니다..
+ㄴ reward 변동이 없는것으로 보아, 학습은 안되는것 같습니다... 
 """
 
 if __name__ == '__main__':
@@ -51,16 +53,16 @@ if __name__ == '__main__':
                         help='Number of Trajectories to get from the agent')
     parser.add_argument('--total_steps', type=int, default=80000000,
                         help='Number of steps to run the agent')
-    parser.add_argument('--batch_size', type=int, default=32,
+    parser.add_argument('--batch_size', type=int, default=8,
                         help='Number of Batch size to set ')
     parser.add_argument("--gamma", type=float, default=0.99,
                         help="the discount factor, default is 0.99")
-    parser.add_argument("--lr", type=float, default=0.001,
-                        help="Learning rate, default is 0.001")
     parser.add_argument("--entropy_cost", type=float, default=0.00025,
                         help="Entropy cost/multiplier, default is 0.00025")
     parser.add_argument("--baseline_cost", type=float, default=.5,
                         help="Baseline cost/multiplier, default is 0.5")
+    parser.add_argument("--lr", type=float, default=0.00048,
+                        help="Learning rate, default is 0.001")
     parser.add_argument("--decay", type=float, default=.99,
                         help="RMSProp optimizer decay, default is .99")
     parser.add_argument("--momentum", type=float, default=0,
@@ -73,18 +75,18 @@ if __name__ == '__main__':
                         help='Set the path to load trained model parameters')
     parser.add_argument('--log_dir', type=str, default="./runs/",
                         help='Set the path to check learning state using tensorboard')    
-    parser.add_argument('--reward_clip', type=str, default="tanh",
-                        help='Set clipping reward type, default is "abs_one" (tanh,abs_one,no_clip)')
+    parser.add_argument('--reward_clip', type=str, default="soft_asymmetric",
+                        help='Set clipping reward type, default is "abs_one" (soft_asymmetric,abs_one,no_clip)')
     
     args = parser.parse_args()
-    env_args = {'game_name': args.game_name, 'seed': args.seed, 'reward_clip': args.reward_clip}
+    env_args = {'game_name': args.game_name, 'seed': args.seed}
     action_size = get_action_size(CartPole, env_args)
     args.action_size = action_size    
 
     '''
     # Standard single-process
     '''
-    
+    """
     # env_name = 'CartPole-v1'   
     experience_queue = queue.Queue()
     lock = threading.Lock()
@@ -151,6 +153,6 @@ if __name__ == '__main__':
     [actor.start() for actor in actors]
     [actor.join() for actor in actors]
     learner.join()
-    """
+    
     
     

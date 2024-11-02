@@ -20,7 +20,7 @@ def convnet_forward(state):
     device = state.device
     conv_out = state
     
-    for i, (num_ch, num_blocks) in enumerate([(32, 2), (64, 2), (64, 2)]):
+    for i, (num_ch, num_blocks) in enumerate([(16, 2), (32, 2), (32, 2)]):
         if i == 0:
             in_ch = conv_out.shape[0]
         else:
@@ -49,7 +49,7 @@ class IMPALA(nn.Module):
         super(IMPALA, self).__init__()
         self.action_space = action_size
 
-        self.fc = nn.Linear(64,hidden_size)
+        self.fc = nn.Linear(32,hidden_size)
         self.lstm = nn.LSTMCell(hidden_size + action_size + 1, 256)
         self.actorcritic = ActorCritic(action_size,256)
 
@@ -84,7 +84,7 @@ class IMPALA(nn.Module):
         input_tensor = torch.cat(lstm_outputs, 0)
 
         logits, values = self.actorcritic(input_tensor)
-        logits[torch.isnan(logits)] = 1e-12
+        # logits[torch.isnan(logits)] = 1e-12
 
         if not actor: # target to learner 
             return logits.view(seq_len, -1, batch_size), values.view(seq_len, batch_size)

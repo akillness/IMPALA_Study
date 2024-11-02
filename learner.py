@@ -2,6 +2,8 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 
+from torch.optim.lr_scheduler import PolynomialLR
+
 import vtrace
 
 import time
@@ -83,15 +85,21 @@ def compute_entropy_loss(logits):
 
 def compute_policy_gradient_loss(logits, actions, advantages):
     cross_entropy = F.cross_entropy(logits, actions, reduction='none')
-    advantages = advantages.detach() 
-    policy_gradient_loss_per_timestep = cross_entropy * advantages
+    policy_gradient_loss_per_timestep = cross_entropy * advantages.detach() 
     return torch.sum(policy_gradient_loss_per_timestep)
 
 def learner(model, experience_queue, sync_ps, args):
     """Learner to get parameters from IMPALA"""
+    
+    
+
     optimizer = optim.RMSprop(model.parameters(), lr=args.lr, eps=args.epsilon,
                               weight_decay=args.decay,
                               momentum=args.momentum)
+    
+    scheduler = PolynomialLR(optimizer, total_iters=args.total_steps, power=1.0)
+    
+    
     batch_size = args.batch_size
     baseline_cost = args.baseline_cost
     entropy_cost = args.entropy_cost
@@ -128,15 +136,24 @@ def learner(model, experience_queue, sync_ps, args):
         behaviour_logits, obs, actions, rewards, dones, hidden_state = transpose_batch_to_stack(batch)
         batch_time = time.time() - start_batch_time
 
+        if args.reward_clip == 'abs_one':
+            clipped_rewards = torch.clamp(rewards, -1, 1)
+        elif args.reward_clip == 'soft_asymmetric':
+            squeezed = torch.tanh(rewards / 5.0)
+            # Negative rewards are given less weight than positive rewards.
+            clipped_rewards = torch.where(rewards < 0, 0.3 * squeezed, squeezed) * 5.0
+        else:
+            clipped_rewards = rewards
+        
         optimizer.zero_grad()
         
         # check forward time 
         start_forward_time = time.time()
-        logits, values = model(obs, actions, rewards, dones, hidden_state=hidden_state)
+        logits, values = model(obs, actions, clipped_rewards, dones, hidden_state=hidden_state)
         forward_time = time.time() - start_forward_time
 
         bootstrap_value = values[-1]
-        actions, behaviour_logits, dones, rewards = actions[1:], behaviour_logits[1:], dones[1:], rewards[1:]
+        actions, behaviour_logits, dones, clipped_rewards = actions[1:], behaviour_logits[1:], dones[1:], clipped_rewards[1:]
         logits, values = logits[:-1], values[:-1]
         discounts = (~dones).float() * gamma
         vs, pg_advantages = vtrace.from_logits(
@@ -144,7 +161,7 @@ def learner(model, experience_queue, sync_ps, args):
             target_policy_logits=logits,
             actions=actions,
             discounts=discounts,
-            rewards=rewards,
+            rewards=clipped_rewards,
             values=values,
             bootstrap_value=bootstrap_value)
         
@@ -153,11 +170,11 @@ def learner(model, experience_queue, sync_ps, args):
         loss = compute_policy_gradient_loss(logits,actions,pg_advantages)
         
         # baseline_loss, Weighted MSELoss
-        critic_loss = compute_baseline_loss(pg_advantages)
-        loss += critic_loss
+        critic_loss = compute_baseline_loss(vs-values)
+        loss += baseline_cost * critic_loss
 
         # entropy_loss
-        entropy = compute_entropy_loss(logits)
+        entropy = entropy_cost * compute_entropy_loss(logits)
         loss += entropy
 
         # check backward time
@@ -165,16 +182,21 @@ def learner(model, experience_queue, sync_ps, args):
         loss.backward()
         backward_time = time.time() - start_backward_time
 
+        # update optimizaer
         optimizer.step()
+        
+        
+        # scheduler update
+        scheduler.step()
         model.cpu()
         
         sync_ps.push(model.state_dict())
-        if rewards.mean().item() > best:
+        if clipped_rewards.mean().item() > best:
             torch.save(model.state_dict(), save_path)
         
         # Importance sampling ratio 기록
         importance_sampling_ratios = torch.exp(logits - behaviour_logits)
-
+        
         # TensorBoard에 손실 및 보상 기록
         writer.add_scalars('Loss',{
             'total': loss.item(),
@@ -182,10 +204,12 @@ def learner(model, experience_queue, sync_ps, args):
             'entropy': entropy.item(),
         }, step)
 
-        
+        writer.add_histogram('Action',actions,step)
+
+        writer.add_scalar('Learner_LR',scheduler.get_last_lr()[0], step )
         writer.add_scalars('Rewards', {
-            'mean': rewards.mean().item(),
-            'sum': rewards.sum().item()
+            'mean': clipped_rewards.mean().item(),
+            'sum': clipped_rewards.sum().item()
         }, step)
         
         writer.add_scalars('Importance_sampling_ratio', {
