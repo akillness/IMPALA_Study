@@ -68,7 +68,7 @@ def actor(idx, experience_queue, sync_ps, env, args):
     length = args.length
     action_size = args.action_size
     model = IMPALA(action_size=action_size)
-    init_lstm_state = torch.zeros((2, 1, 256), dtype=torch.float32)
+    init_lstm_state = torch.zeros((2, 1, 128), dtype=torch.float32)
     
     env.start()
     """Run the env for n steps and return a trajectory rollout."""
@@ -99,7 +99,7 @@ def actor(idx, experience_queue, sync_ps, env, args):
                     rollout.finish()
                     # Queue trajectory data( all of state )
                     experience_queue.put(rollout)                    
-                    print(f"Actor : {idx}, Step : {steps}, Total Reward : {total_reward}")
+                    # print(f"Actor : {idx}, Step : {steps}, Total Reward : {total_reward}")
                     break
 
                 if done:

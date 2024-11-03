@@ -116,6 +116,13 @@ def learner(model, experience_queue, sync_ps, args):
     
     while True:
         """Gets trajectory from experience of actors and trains learner."""
+        
+        total_loss = 0.0 
+        policy_loss = 0.0 
+        entropy_loss = 0.0 
+        reward_mean = 0.0 
+        reward_sum = 0.0 
+        
         # check batch time
         start_batch_time = time.time()
         # Dequeue trajectory data( all of state )
@@ -155,7 +162,9 @@ def learner(model, experience_queue, sync_ps, args):
         bootstrap_value = values[-1]
         actions, behaviour_logits, dones, clipped_rewards = actions[1:], behaviour_logits[1:], dones[1:], clipped_rewards[1:]
         logits, values = logits[:-1], values[:-1]
+
         discounts = (~dones).float() * gamma
+
         vs, pg_advantages = vtrace.from_logits(
             behaviour_policy_logits=behaviour_logits,
             target_policy_logits=logits,
@@ -166,11 +175,14 @@ def learner(model, experience_queue, sync_ps, args):
             bootstrap_value=bootstrap_value)
         
 
+        
+
         # policy gradient loss
         loss = compute_policy_gradient_loss(logits,actions,pg_advantages)
         
         # baseline_loss, Weighted MSELoss
-        critic_loss = compute_baseline_loss(vs-values)
+        advantages = vs-values
+        critic_loss = compute_baseline_loss(advantages)
         loss += baseline_cost * critic_loss
 
         # entropy_loss
@@ -182,6 +194,11 @@ def learner(model, experience_queue, sync_ps, args):
         loss.backward()
         backward_time = time.time() - start_backward_time
 
+        # omptimisation
+        torch.nn.utils.clip_grad_norm_(
+            model.parameters(), args.global_gradient_norm
+        )
+       
         # update optimizaer
         optimizer.step()
         
@@ -194,22 +211,30 @@ def learner(model, experience_queue, sync_ps, args):
         if clipped_rewards.mean().item() > best:
             torch.save(model.state_dict(), save_path)
         
+        
+
+        total_loss += loss.item() / batch_size
+        policy_loss += critic_loss.item() / batch_size
+        entropy_loss += entropy.item() / batch_size
+        reward_mean += clipped_rewards.mean().item() / batch_size
+        reward_sum += clipped_rewards.sum().item() / batch_size
+
         # Importance sampling ratio 기록
         importance_sampling_ratios = torch.exp(logits - behaviour_logits)
         
         # TensorBoard에 손실 및 보상 기록
         writer.add_scalars('Loss',{
-            'total': loss.item(),
-            'critic': critic_loss.item(),
-            'entropy': entropy.item(),
+            'total': total_loss,
+            'critic': policy_loss,
+            'entropy': entropy_loss,
         }, step)
 
         writer.add_histogram('Action',actions,step)
 
         writer.add_scalar('Learning_rate',scheduler.get_last_lr()[0], step )
         writer.add_scalars('Rewards', {
-            'mean': clipped_rewards.mean().item(),
-            'sum': clipped_rewards.sum().item()
+            'mean': reward_mean,
+            'sum': reward_sum
         }, step)
         
         writer.add_scalars('Importance_sampling_ratio', {
@@ -223,7 +248,12 @@ def learner(model, experience_queue, sync_ps, args):
             'forward': forward_time,
             'backward': backward_time
         }, step)
-
+        
+        # log to console
+        if args.verbose >= 1:
+            # reward_mean = clipped_rewards.mean()
+            print( f"Batch Mean Reward: {reward_mean:.2f} | Loss: {total_loss:.2f}" )
+            
         step += 1
 
         if torch.cuda.is_available():

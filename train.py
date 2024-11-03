@@ -69,6 +69,10 @@ if __name__ == '__main__':
                         help="RMSProp momentum, default is 0")
     parser.add_argument("--epsilon", type=float, default=0.1,
                         help="RMSProp epsilon, default is 0.1")
+    parser.add_argument("--global_gradient_norm", type=int, default=40,
+                        help="RMSProp gradient norm, default is 40")
+    parser.add_argument("--verbose", type=int, default=1,
+                        help="RMSProp print log flag, default is 0")
     parser.add_argument('--save_path', type=str, default="./model/checkpoint.pt",
                         help='Set the path to save trained model parameters')
     parser.add_argument('--load_path', type=str, default="./model/checkpoint.pt",
