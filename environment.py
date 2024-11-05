@@ -25,7 +25,7 @@ class CartPole:
         np.random.seed(seed)
         self.env._max_episode_steps = max_episode_length
         
-        self.actions = self.env.action_space 
+        self.actions = self.env.action_space.n 
         self.history_length = history_length
         self.state_buffer = deque([], maxlen=history_length)
         self.training = True
@@ -48,7 +48,7 @@ class CartPole:
         state, reward, done, _, info = self.env.step(action)
         observation = torch.tensor(state,dtype=torch.float32, device=self.device)
         self.state_buffer.append(observation)
-        
+        # print(f"state : {action}, reward : {reward}")        
         # Return state, reward, done
         return torch.stack(list(self.state_buffer), 0), reward, done
     
@@ -59,9 +59,10 @@ class CartPole:
         self.training = False
 
     def action_size(self):
-        return self.actions.n
+        return self.actions
 
     def close(self):
         self.env.close()
+        # exit()
 
 

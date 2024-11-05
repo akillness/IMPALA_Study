@@ -43,7 +43,7 @@ from concurrent.futures import ThreadPoolExecutor
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--actors", type=int, default=4,
+    parser.add_argument("--actors", type=int, default=1,
                         help="the number of actors to start, default is 8")
     parser.add_argument("--seed", type=int, default=23,
                         help="the seed of random, default is 20")
@@ -52,7 +52,7 @@ if __name__ == '__main__':
     parser.add_argument('--length', type=int, default=20,
                         help='Number of Trajectories to get from the agent')
     parser.add_argument('--total_steps', type=int, default=80000000,
-                        help='Number of steps to run the agent')
+                        help='Number of steps to run the agent, default is 80000000')
     parser.add_argument('--batch_size', type=int, default=8,
                         help='Number of Batch size to set ')
     parser.add_argument("--gamma", type=float, default=0.99,
@@ -61,7 +61,7 @@ if __name__ == '__main__':
                         help="Entropy cost/multiplier, default is 0.00025")
     parser.add_argument("--baseline_cost", type=float, default=.5,
                         help="Baseline cost/multiplier, default is 0.5")
-    parser.add_argument("--lr", type=float, default=0.00048,
+    parser.add_argument("--lr", type=float, default=0.001,
                         help="Learning rate, default is 0.001")
     parser.add_argument("--decay", type=float, default=.99,
                         help="RMSProp optimizer decay, default is .99")
@@ -90,40 +90,46 @@ if __name__ == '__main__':
     '''
     # Standard single-process
     '''
+    
     """
+    terminate_event = threading.Event()
     # env_name = 'CartPole-v1'   
     experience_queue = queue.Queue()
-    lock = threading.Lock()
+    
     envs = [EnvThread(CartPole, env_args)
             for idx in range(args.actors)]
     
-    sync_ps = SyncParameters(lock)
     model = IMPALA(action_size=args.action_size)
+    
+    lock = threading.Lock()    
+    sync_ps = SyncParameters(lock)
     sync_ps.push(model.state_dict())
-
+    
+    
     idx  = 0
-    actor = threading.Thread(target=actor, args=(idx, experience_queue, sync_ps, envs[idx], args))
-    learner = threading.Thread(target=learner, args=(model, experience_queue, sync_ps, args))
+
+    # actor(idx, experience_queue, sync_ps, envs[idx], args, terminate_event)
+    actor = threading.Thread(target=actor, args=(idx, experience_queue, sync_ps, envs[idx], args, terminate_event))
+    learner = threading.Thread(target=learner, args=(model, experience_queue, sync_ps, args, terminate_event))
 
     learner.start()
     actor.start()
     actor.join()
     learner.join()
 
-    # max workers : actors + learner
-    with ThreadPoolExecutor(max_workers=args.actors + 1) as executor:
-        # actors
-        thread_pool = [executor.submit(actor, idx, experience_queue, sync_ps, envs[idx], args) for idx in range(args.actors)]
-        # learner
-        thread_pool.append(executor.submit(learner, model, experience_queue, sync_ps, args))
+    # # max workers : actors + learner
+    # with ThreadPoolExecutor(max_workers=args.actors + 1) as executor:
+    #     # actors
+    #     thread_pool = [executor.submit(actor, idx, experience_queue, sync_ps, envs[idx], args) for idx in range(args.actors)]
+    #     # learner
+    #     thread_pool.append(executor.submit(learner, model, experience_queue, sync_ps, args))
         
-        # synchronous learning and actors
-        for thread in thread_pool:
-            thread.result()
+    #     # synchronous learning and actors
+    #     for thread in thread_pool:
+    #         thread.result()
 
-
-    
     """
+    
     # Optional Section
 
     from proxy import EnvProcess
@@ -133,23 +139,25 @@ if __name__ == '__main__':
 
     mp.set_start_method('spawn')
     
+    terminate_event = mp.Event()
     # optional : using 4-actor other process 
     args.actors = 4
 
     experience_queue = mp.Queue(maxsize=1)
+    model = IMPALA(action_size=args.action_size)
+
     lock = mp.Lock()
     sync_ps = SyncParameters(lock)
-    model = IMPALA(action_size=args.action_size)
     sync_ps.push(model.state_dict())
     
     # environments of multi-process paired actors
     envs = [EnvProcess(CartPole, env_args)
             for idx in range(args.actors)]
     # learner
-    learner = mp.Process(target=learner, args=(model, experience_queue, sync_ps, args))
+    learner = mp.Process(target=learner, args=(model, experience_queue,sync_ps, args, terminate_event))
 
     # actors of multi-process pool
-    actors = [mp.Process(target=actor, args=(idx, experience_queue, sync_ps, envs[idx], args))
+    actors = [mp.Process(target=actor, args=(idx, experience_queue, sync_ps, envs[idx], args, terminate_event))
               for idx in range(args.actors)]
     
     # synchronous learning and actors
@@ -158,5 +166,18 @@ if __name__ == '__main__':
     [actor.join() for actor in actors]
     learner.join()
     
+    # def actor_wrapper(args):
+    #     idx, experience_queue, sync_ps, env, actor_args, terminate_event = args
+    #     actor(idx, experience_queue, sync_ps, env, actor_args, terminate_event)
+
+    # # Pool을 사용하여 actor 프로세스 관리
+    # with mp.Pool(processes=args.actors) as pool:
+    #     actor_args = [(idx, experience_queue, sync_ps, envs[idx], args, terminate_event) for idx in range(args.actors)]
+    #     learner.start()
+    #     pool.map(actor_wrapper, actor_args)
+    #     learner.join()
     
+    
+    # main 프로세스 종료
+    print("All processes have been terminated. Exiting main process.")
     

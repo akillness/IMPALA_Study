@@ -15,6 +15,7 @@ class SyncParameters(object):
     def push(self, weigth):
         with self.lock:
             self.weight = weigth
+    
 
 class EnvThread(object):
     def __init__(self, env_class, constructor_kwargs):
@@ -99,6 +100,7 @@ class EnvProcess(object):
             raise IOError
         print("closed env type of normal")
         self._process.join()
+        # self._process.terminate()
 
     def reset(self):
         self.parent_conn.send([0, None])

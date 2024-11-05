@@ -183,10 +183,8 @@ def from_importance_weights(
             clipped_rhos = torch.min(clip_rho_threshold, rhos)
         else:
             clipped_rhos = rhos
-
+        '''
         cs = torch.min(torch.ones_like(rhos), rhos)
-
-        
         # Append bootstrapped value to get [v1, ..., v_t+1]
         values_t_plus_1 = torch.cat((values, bootstrap_value.unsqueeze(0)), dim=0)
         
@@ -212,7 +210,42 @@ def from_importance_weights(
         pg_advantages = (
                 clipped_pg_rhos * (rewards + discounts * torch.cat(
             (vs[1:], bootstrap_value.unsqueeze(0)), dim=0) - values))
+        '''
 
+        # """
+        # vs: v-trace target
+        # """
+        # for rev_step in reversed(range(obs.size(1)-1)):
+        
+        #     delta_s = rho[rev_step] * (rewards[:, rev_step] + self.args.gamma * values[rev_step+1]-values[rev_step])
+        #     # value_loss = v_{s} - V(x_{s})
+        #     advantages = rho[rev_step] * (rewards[:, rev_step] + self.args.gamma * vs[rev_step+1] - values[rev_step])
+        #     vs[rev_step] = values[rev_step] + delta_s + self.args.gamma * coef[rev_step] * (vs[rev_step+1]-values[rev_step+1])
+
+        #     policy_loss += log_prob[rev_step]*advantages.detach()
+
+        cs = torch.min(torch.ones_like(rhos), rhos)
+        
+        values_t_plus_1 = torch.cat([values[1:], bootstrap_value.unsqueeze(0)], dim=0)
+        deltas = clipped_rhos * (rewards + discounts * values_t_plus_1 - values)
+        
+        vs_minus_v_xs = torch.zeros_like(values)
+        vs_minus_v_xs[-1] = deltas[-1]
+        
+        for t in reversed(range(len(discounts) - 1)):
+            vs_minus_v_xs[t] = deltas[t] + discounts[t] * cs[t] * vs_minus_v_xs[t + 1]
+        
+        vs = vs_minus_v_xs + values
+        
+        # Advantage for policy gradient.
+        if clip_pg_rho_threshold is not None:
+            clipped_pg_rhos = torch.min(clip_pg_rho_threshold, rhos)
+        else:
+            clipped_pg_rhos = rhos
+        
+        pg_advantages = (
+            clipped_pg_rhos * (rewards + discounts * values_t_plus_1 - values))
+        
         # Make sure no gradients backpropagated through the returned values.
         return vs, pg_advantages
         

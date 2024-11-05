@@ -78,33 +78,38 @@ def compute_baseline_loss(advantages):
     return 0.5 * torch.sum(torch.square(advantages))
 
 def compute_entropy_loss(logits):
+    # policy = F.softmax(logits, dim=-1)
+    # log_policy = F.log_softmax(logits, dim=-1)
+    # entropy_per_timestep = torch.sum(-policy * log_policy, dim=-1)
+    # return -torch.sum(entropy_per_timestep)
+    """Return the entropy loss, i.e., the negative entropy of the policy."""
     policy = F.softmax(logits, dim=-1)
     log_policy = F.log_softmax(logits, dim=-1)
-    entropy_per_timestep = torch.sum(-policy * log_policy, dim=-1)
-    return -torch.sum(entropy_per_timestep)
+    return -torch.sum(policy * log_policy)
 
 def compute_policy_gradient_loss(logits, actions, advantages):
     cross_entropy = F.cross_entropy(logits, actions, reduction='none')
     policy_gradient_loss_per_timestep = cross_entropy * advantages.detach() 
     return torch.sum(policy_gradient_loss_per_timestep)
 
-def learner(model, experience_queue, sync_ps, args):
+def learner(model, experience_queue, sync_ps, args, terminate_event):
     """Learner to get parameters from IMPALA"""
-    
-    
+    # optimizer = optim.RMSprop(model.parameters(), lr=args.lr, eps=args.epsilon,
+    #                           weight_decay=args.decay,
+    #                           momentum=args.momentum)
 
-    optimizer = optim.RMSprop(model.parameters(), lr=args.lr, eps=args.epsilon,
-                              weight_decay=args.decay,
-                              momentum=args.momentum)
-    
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, eps=args.epsilon,
+                       weight_decay=args.decay)
+
     scheduler = PolynomialLR(optimizer, total_iters=args.total_steps, power=1.0)
-    
+    model.share_memory()
     
     batch_size = args.batch_size
     baseline_cost = args.baseline_cost
     entropy_cost = args.entropy_cost
     gamma = args.gamma
     save_path = args.save_path
+    total_steps = args.total_steps
 
     # TensorBoard SummaryWriter 초기화
     writer = SummaryWriter(log_dir=args.log_dir)
@@ -114,7 +119,7 @@ def learner(model, experience_queue, sync_ps, args):
     best = 0.
     step = 0
     
-    while True:
+    while not terminate_event.is_set():
         """Gets trajectory from experience of actors and trains learner."""
         
         total_loss = 0.0 
@@ -164,30 +169,41 @@ def learner(model, experience_queue, sync_ps, args):
         logits, values = logits[:-1], values[:-1]
 
         discounts = (~dones).float() * gamma
-
-        vs, pg_advantages = vtrace.from_logits(
-            behaviour_policy_logits=behaviour_logits,
-            target_policy_logits=logits,
-            actions=actions,
+        
+        # compute value estimates and logits for observed states
+        # compute log probs for current and old policies
+        target_log_probs = vtrace.log_probs_from_logits_and_actions(logits, actions)
+        behaviour_log_probs = vtrace.log_probs_from_logits_and_actions(behaviour_logits, actions)
+        log_rhos = target_log_probs - behaviour_log_probs
+        vs, pg_advantages = vtrace.from_importance_weights(
+            log_rhos=log_rhos,
             discounts=discounts,
             rewards=clipped_rewards,
             values=values,
             bootstrap_value=bootstrap_value)
         
-
-        
-
-        # policy gradient loss
-        loss = compute_policy_gradient_loss(logits,actions,pg_advantages)
+        # vs, pg_advantages = vtrace.from_logits(
+        #     behaviour_policy_logits=behaviour_logits,
+        #     target_policy_logits=logits,
+        #     actions=actions,
+        #     discounts=discounts,
+        #     rewards=clipped_rewards,
+        #     values=values,
+        #     bootstrap_value=bootstrap_value)
+   
         
         # baseline_loss, Weighted MSELoss
         advantages = vs-values
         critic_loss = compute_baseline_loss(advantages)
-        loss += baseline_cost * critic_loss
+        loss = baseline_cost * critic_loss
+
+        # policy gradient loss
+        loss += compute_policy_gradient_loss(logits,actions,pg_advantages)
 
         # entropy_loss
         entropy = entropy_cost * compute_entropy_loss(logits)
         loss += entropy
+        # loss -= entropy
 
         # check backward time
         start_backward_time = time.time()
@@ -211,7 +227,6 @@ def learner(model, experience_queue, sync_ps, args):
         if clipped_rewards.mean().item() > best:
             torch.save(model.state_dict(), save_path)
         
-        
 
         total_loss += loss.item() / batch_size
         policy_loss += critic_loss.item() / batch_size
@@ -220,7 +235,7 @@ def learner(model, experience_queue, sync_ps, args):
         reward_sum += clipped_rewards.sum().item() / batch_size
 
         # Importance sampling ratio 기록
-        importance_sampling_ratios = torch.exp(logits - behaviour_logits)
+        importance_sampling_ratios = torch.exp(log_rhos)
         
         # TensorBoard에 손실 및 보상 기록
         writer.add_scalars('Loss',{
@@ -265,4 +280,8 @@ def learner(model, experience_queue, sync_ps, args):
         
         batch = []
 
+        if step >= total_steps:
+            terminate_event.set()
+            
+    print("Exiting leraner process.")
     writer.close()
