@@ -53,7 +53,7 @@ if __name__ == '__main__':
                         help='Number of Trajectories to get from the agent')
     parser.add_argument('--total_steps', type=int, default=80000000,
                         help='Number of steps to run the agent, default is 80000000')
-    parser.add_argument('--batch_size', type=int, default=8,
+    parser.add_argument('--batch_size', type=int, default=4,
                         help='Number of Batch size to set ')
     parser.add_argument("--gamma", type=float, default=0.99,
                         help="the discount factor, default is 0.99")
@@ -61,7 +61,7 @@ if __name__ == '__main__':
                         help="Entropy cost/multiplier, default is 0.00025")
     parser.add_argument("--baseline_cost", type=float, default=.5,
                         help="Baseline cost/multiplier, default is 0.5")
-    parser.add_argument("--lr", type=float, default=0.001,
+    parser.add_argument("--lr", type=float, default=0.00048,
                         help="Learning rate, default is 0.001")
     parser.add_argument("--decay", type=float, default=.99,
                         help="RMSProp optimizer decay, default is .99")
@@ -129,7 +129,7 @@ if __name__ == '__main__':
     #         thread.result()
 
     """
-    
+
     # Optional Section
 
     from proxy import EnvProcess

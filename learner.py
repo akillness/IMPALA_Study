@@ -125,6 +125,7 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         total_loss = 0.0 
         policy_loss = 0.0 
         entropy_loss = 0.0 
+        reward = 0.0
         reward_mean = 0.0 
         reward_sum = 0.0 
         
@@ -144,8 +145,9 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         if len(batch) < batch_size:
             continue
 
-        # print(f"state : {trajectory}"
+        
         behaviour_logits, obs, actions, rewards, dones, hidden_state = transpose_batch_to_stack(batch)
+        print(f"rewards : {rewards.sum().item()}")
         batch_time = time.time() - start_batch_time
 
         if args.reward_clip == 'abs_one':
@@ -231,6 +233,7 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         total_loss += loss.item() / batch_size
         policy_loss += critic_loss.item() / batch_size
         entropy_loss += entropy.item() / batch_size
+        reward += rewards.mean().item() / batch_size
         reward_mean += clipped_rewards.mean().item() / batch_size
         reward_sum += clipped_rewards.sum().item() / batch_size
 
@@ -249,7 +252,8 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         writer.add_scalar('Learning_rate',scheduler.get_last_lr()[0], step )
         writer.add_scalars('Rewards', {
             'mean': reward_mean,
-            'sum': reward_sum
+            'sum': reward_sum,
+            'trj': reward
         }, step)
         
         writer.add_scalars('Importance_sampling_ratio', {
@@ -267,7 +271,7 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         # log to console
         if args.verbose >= 1:
             # reward_mean = clipped_rewards.mean()
-            print( f"Batch Mean Reward: {reward_mean:.2f} | Loss: {total_loss:.2f}" )
+            print(f"Batch Reward: {reward} , Mean Clip Reward: {reward_mean} , Loss: {total_loss:.2f}")
             
         step += 1
 
