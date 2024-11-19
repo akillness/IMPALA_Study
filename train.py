@@ -1,6 +1,7 @@
 
 import argparse
 
+import torch 
 
 from proxy import *
 from environment import CartPole,get_action_size
@@ -9,7 +10,7 @@ from model import IMPALA
 from actor import actor
 from learner import learner
 
-import threading
+import threading, os
 # import threading, queue
 from concurrent.futures import ThreadPoolExecutor
 
@@ -86,7 +87,11 @@ if __name__ == '__main__':
     env_args = {'game_name': args.game_name, 'seed': args.seed}
     action_size = get_action_size(CartPole, env_args)
     args.action_size = action_size    
-
+    
+    model = IMPALA(action_size=args.action_size)
+    if os.path.exists(args.load_path):
+        model.state_dict(torch.load(args.load_path, map_location= torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"), weights_only=True))
+        
     '''
     # Standard single-process
     '''
@@ -99,7 +104,7 @@ if __name__ == '__main__':
     envs = [EnvThread(CartPole, env_args)
             for idx in range(args.actors)]
     
-    model = IMPALA(action_size=args.action_size)
+    # model = IMPALA(action_size=args.action_size)
     
     lock = threading.Lock()    
     sync_ps = SyncParameters(lock)
@@ -107,8 +112,6 @@ if __name__ == '__main__':
     
     
     idx  = 0
-
-    # actor(idx, experience_queue, sync_ps, envs[idx], args, terminate_event)
     actor = threading.Thread(target=actor, args=(idx, experience_queue, sync_ps, envs[idx], args, terminate_event))
     learner = threading.Thread(target=learner, args=(model, experience_queue, sync_ps, args, terminate_event))
 
@@ -144,7 +147,7 @@ if __name__ == '__main__':
     args.actors = 4
 
     experience_queue = mp.Queue(maxsize=1)
-    model = IMPALA(action_size=args.action_size)
+    # model = IMPALA(action_size=args.action_size)
 
     lock = mp.Lock()
     sync_ps = SyncParameters(lock)
@@ -165,19 +168,6 @@ if __name__ == '__main__':
     [actor.start() for actor in actors]
     [actor.join() for actor in actors]
     learner.join()
-    
-    # def actor_wrapper(args):
-    #     idx, experience_queue, sync_ps, env, actor_args, terminate_event = args
-    #     actor(idx, experience_queue, sync_ps, env, actor_args, terminate_event)
-
-    # # Pool을 사용하여 actor 프로세스 관리
-    # with mp.Pool(processes=args.actors) as pool:
-    #     actor_args = [(idx, experience_queue, sync_ps, envs[idx], args, terminate_event) for idx in range(args.actors)]
-    #     learner.start()
-    #     pool.map(actor_wrapper, actor_args)
-    #     learner.join()
-    
-    
     # main 프로세스 종료
     print("All processes have been terminated. Exiting main process.")
-    
+    # """

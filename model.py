@@ -51,6 +51,7 @@ class IMPALA(nn.Module):
 
         # self.fc = nn.Linear(32,hidden_size)
         self.fc = nn.Linear(16,hidden_size)
+                
         # self.lstm = nn.LSTMCell(hidden_size + action_size + 1, 64)
         self.lstm = nn.LSTMCell(hidden_size + action_size + 1, 256)
         
@@ -77,8 +78,9 @@ class IMPALA(nn.Module):
 
         # sequental
         input_tensor = input_tensor.view(input_tensor.shape[0], -1)
-        # input_tensor = F.relu(self.fc(input_tensor), inplace=True)
-        input_tensor = self.fc(input_tensor)
+        input_tensor = F.relu(self.fc(input_tensor), inplace=True)
+
+        # input_tensor = F.relu(self.batchnorm(self.fc(input_tensor)))
         input_tensor = torch.cat((input_tensor, reward, last_action), dim=1)
         input_tensor = input_tensor.view(seq_len, batch_size, -1)
 
