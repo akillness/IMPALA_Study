@@ -11,14 +11,14 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 '''
-    # Target Policy : πρ¯
+    # Target Policy : πρ¯ -- Behaviour Policy를 통해 나온 최신 policy
     Target policy는 학습자(Learner)가 최적화하려는 정책. 
     이는 에이전트가 궁극적으로 따르기를 원하는 정책으로, 학습 과정에서 지속적으로 업데이트 됨. 
     Target policy는 학습자가 수집한 데이터를 기반으로 가치 함수와 정책을 업데이트하는 데 사용. 
     :: 이 정책은 주로 학습자의 신경망 파라미터로 표현됩니다
 
     # Behaviour Policy : µ
-    행동 정책은 에이전트가 환경에서 어떤 행동을 선택할지를 결정하는 정책. 
+    행동 정책은 에이전트가 환경에서 어떤 행동을 선택할지를 결정하는 정책. 수집된 과거의 policy 
     IMPALA에서는 여러 개의 액터(actor)가 환경과 상호작용하며 데이터를 수집. 
     이 액터들은 행동 정책을 따르며, 이 정책은 학습자(learner)에 의해 주기적으로 업데이트 됨. 
     행동 정책은 주로 탐험(exploration)과 활용(exploitation) 사이의 균형을 맞추기 위해 설계.
