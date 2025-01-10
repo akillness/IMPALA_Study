@@ -27,12 +27,12 @@ class Trajectory(object):
 
     def append(self, state, action, reward, done, logit):
 
-        if self.max_size <= len(self.obs):
-            self.obs.pop(0)
-            self.actions.pop(0)
-            self.rewards.pop(0)
-            self.logit.pop(0)
-            self.dones.pop(0)
+        # if self.max_size <= len(self.obs):
+        #     self.obs.pop(0)
+        #     self.actions.pop(0)
+        #     self.rewards.pop(0)
+        #     self.logit.pop(0)
+        #     self.dones.pop(0)
 
         self.obs.append(state)
         self.actions.append(action)
@@ -100,8 +100,7 @@ def actor(idx, experience_queue, sync_ps, env, args, terminate_event):
     done = torch.tensor(False, dtype=torch.bool).view(1, 1)
     init_state = (obs, last_action, reward, done, logits)
     persistent_state = init_state
-    # rewards = 0
-
+    rewards = 0
     while not terminate_event.is_set():
         # Sync trained model
         model.load_state_dict(sync_ps.pull())
@@ -113,15 +112,23 @@ def actor(idx, experience_queue, sync_ps, env, args, terminate_event):
         total_reward = 0
         with torch.no_grad():
             while steps < total_steps:
+                
+                if rollout.length == length + 1:
+                    rewards += total_reward
+                    persistent_state = rollout.get_last()
+                    rollout.finish()
+                    experience_queue.put(rollout)
+                    # print("Actor: {} put Steps: {} rewards:{}".format(idx, steps, rewards))
+                    break
                 if done:
                     total_reward = 0.
                     steps = 0
                     hidden_state = init_lstm_state
                     __, last_action, reward, done, _ = init_state
                     obs = env.reset()
-                    break
-                
-                action, logits, hidden_state = model(obs.unsqueeze(0).unsqueeze(1), last_action, reward, done, hidden_state, actor=True)
+                    # break
+                # action, logits, hidden_state = model(obs.unsqueeze(0).unsqueeze(1), last_action, reward, done, hidden_state, actor=True)
+                action, logits, hidden_state = model(obs.unsqueeze(0), last_action, reward, done, hidden_state, actor=True)
                           
                 obs, reward, done = env.step(action)
                 total_reward += reward
@@ -133,15 +140,15 @@ def actor(idx, experience_queue, sync_ps, env, args, terminate_event):
                 rollout.append(obs, last_action, reward, done, logits.detach())
                 steps += 1
             
-            # if rollout.length == length + 1:
-            if rollout.length == length:
-                # rewards += total_reward
-                persistent_state = rollout.get_last()
-                rollout.finish()
-                # Queue trajectory data( all of state )
-                experience_queue.put(rollout)              
-                # print(f"Actor : {idx}, Total Reward : {total_reward}")
-                # break
+            
+            # if rollout.length == length:
+            #     # rewards += total_reward
+            #     persistent_state = rollout.get_last()
+            #     rollout.finish()
+            #     # Queue trajectory data( all of state )
+            #     experience_queue.put(rollout)              
+            #     # print(f"Actor : {idx}, Total Reward : {total_reward}")
+            #     # break
         
     print("Exiting actoer process.")
     env.close()

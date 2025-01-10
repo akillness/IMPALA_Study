@@ -5,7 +5,7 @@ import math
 import torch
 
 import atari_py
-import cv
+import cv2
 import random 
 
 from collections import deque

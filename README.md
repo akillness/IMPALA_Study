@@ -1,6 +1,20 @@
 # IMPALA_Cartpole
 RL 과제 구현 소스관리
 
+# 설치 
+- Atari-py 설치
+~~~sh
+pip install atari-py
+~~~
+
+- Rom설치
+링크 : [om_collection_archive_atari_2600_roms](https://www.atarimania.com/rom_collection_archive_atari_2600_roms.html)
+
+위 링크에서 다운받은 파일 압축해제 후 ROM 폴더 경로 지정
+~~~sh
+python -m atari_py.import_roms <path to folder>
+~~~
+
 # RL과제
 
 Implement IMPALA for CartPole-v1 of gym (or gymnasium) with the following requirements.

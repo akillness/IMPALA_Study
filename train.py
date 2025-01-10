@@ -4,7 +4,7 @@ import argparse
 import torch 
 
 from proxy import *
-from environment import CartPole,get_action_size
+from environment import Atari,get_action_size
 
 from model import IMPALA
 from actor import actor
@@ -44,11 +44,11 @@ from concurrent.futures import ThreadPoolExecutor
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--actors", type=int, default=1,
+    parser.add_argument("--actors", type=int, default=4,
                         help="the number of actors to start, default is 8")
     parser.add_argument("--seed", type=int, default=23,
                         help="the seed of random, default is 20")
-    parser.add_argument("--game_name", type=str, default='CartPole-v1',
+    parser.add_argument("--game_name", type=str, default='breakout',#'CartPole-v1',
                         help="the name of atari game, default is CartPole-v1")
     parser.add_argument('--length', type=int, default=20,
                         help='Number of Trajectories to get from the agent')
@@ -85,7 +85,7 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     env_args = {'game_name': args.game_name, 'seed': args.seed}
-    action_size = get_action_size(CartPole, env_args)
+    action_size = get_action_size(Atari, env_args)
     args.action_size = action_size    
     
     model = IMPALA(action_size=args.action_size)
@@ -136,7 +136,7 @@ if __name__ == '__main__':
     # Optional Section
 
     from proxy import EnvProcess
-    from environment import CartPole, get_action_size
+    from environment import Atari, get_action_size
 
     import torch.multiprocessing as mp
 
@@ -154,7 +154,7 @@ if __name__ == '__main__':
     sync_ps.push(model.state_dict())
     
     # environments of multi-process paired actors
-    envs = [EnvProcess(CartPole, env_args)
+    envs = [EnvProcess(Atari, env_args)
             for idx in range(args.actors)]
     # learner
     learner = mp.Process(target=learner, args=(model, experience_queue,sync_ps, args, terminate_event))
@@ -165,6 +165,8 @@ if __name__ == '__main__':
     
     # synchronous learning and actors
     learner.start()
+    # idx = 0
+    # actor(idx, experience_queue, sync_ps, envs[idx], args, terminate_event)
     [actor.start() for actor in actors]
     [actor.join() for actor in actors]
     learner.join()
