@@ -104,16 +104,16 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
     save_path = args.save_path
     total_steps = args.total_steps
 
-    # optimizer = optim.Adam(model.parameters(), lr=args.lr, eps=args.epsilon,
-    #                    weight_decay=args.decay)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, eps=args.epsilon,
+                       weight_decay=args.decay)
 
-    optimizer = torch.optim.RMSprop(
-        model.parameters(),
-        lr=args.lr,
-        momentum=args.momentum,
-        eps=args.epsilon,
-        alpha=args.decay,
-    )
+    # optimizer = torch.optim.RMSprop(
+    #     model.parameters(),
+    #     lr=args.lr,
+    #     momentum=args.momentum,
+    #     eps=args.epsilon,
+    #     alpha=args.decay,
+    # )
 
     lr_lambda = lambda epoch : 1 - min(epoch * args.length * args.batch_size, args.total_steps) / args.total_steps
     scheduler = LambdaLR(optimizer,lr_lambda)

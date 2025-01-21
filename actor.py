@@ -130,10 +130,16 @@ def actor(idx, experience_queue, sync_ps, args, terminate_event):
                     #     print("Actor: {} rewards:{}".format(idx, total_reward))
                     break
                 if done:
+                    if steps < length-1:
+                        # persistent_state = rollout.get_last()
+                        rollout.clear()
+
                     total_reward = 0.
+                    steps = 0
                     hidden_state = init_lstm_state
                     __, last_action, reward, done, _ = init_state
                     obs = env.reset()
+
                     
                 # action, logits, hidden_state = model(obs.unsqueeze(0).unsqueeze(1), last_action, reward, done, hidden_state, actor=True)
                 action, logits, hidden_state = model(obs.unsqueeze(0), last_action, reward, done, hidden_state, actor=True)
@@ -146,7 +152,7 @@ def actor(idx, experience_queue, sync_ps, args, terminate_event):
                 done = torch.tensor(done, dtype=torch.bool).view(1, 1)
 
                 rollout.append(obs, last_action, reward, done, logits.detach())
-                # steps += 1
+                steps += 1
 
                 while terminate_event.is_set():
                     if args.verbose >= 1:
