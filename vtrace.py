@@ -48,15 +48,11 @@ VTraceReturns = collections.namedtuple("VTraceReturns", "vs pg_advantages")
 
 
 def action_log_probs(policy_logits, actions):
-    # return -F.nll_loss(
-    #     F.log_softmax(torch.flatten(policy_logits, 0, -2), dim=-1),
-    #     torch.flatten(actions),
-    #     reduction="none",
-    # ).view_as(actions)
-    assert len(policy_logits.shape) == 3, "policy_logits should have rank 3"
-    assert len(actions.shape) == 2, "actions should have rank 2"
-
-    return -F.cross_entropy(policy_logits, actions, reduction='none')
+    return -F.nll_loss(
+        F.log_softmax(torch.flatten(policy_logits, 0, -2), dim=-1),
+        torch.flatten(actions),
+        reduction="none",
+    ).view_as(actions)
 
 
 def from_logits(

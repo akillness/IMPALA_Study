@@ -103,7 +103,9 @@ def actor(idx, experience_queue, sync_ps, env, args, terminate_event):
     rewards = 0
     while not terminate_event.is_set():
         # Sync trained model
-        model.load_state_dict(sync_ps.pull())
+        with sync_ps.lock:
+            model.load_state_dict(sync_ps.pull())
+
         # rollout.clear()
         rollout = Trajectory(max_size=length)
         rollout.actor_id = idx
@@ -112,17 +114,18 @@ def actor(idx, experience_queue, sync_ps, env, args, terminate_event):
         total_reward = 0
         with torch.no_grad():
             while steps < total_steps:
-                
+            # while True:
                 if rollout.length == length + 1:
                     rewards += total_reward
                     persistent_state = rollout.get_last()
                     rollout.finish()
                     experience_queue.put(rollout)
-                    # print("Actor: {} put Steps: {} rewards:{}".format(idx, steps, rewards))
+                    if args.verbose >= 1:
+                        print("Actor: {} put Steps: {} rewards:{}".format(idx, steps, rewards))
                     break
                 if done:
                     total_reward = 0.
-                    steps = 0
+                    # steps = 0
                     hidden_state = init_lstm_state
                     __, last_action, reward, done, _ = init_state
                     obs = env.reset()
@@ -139,7 +142,11 @@ def actor(idx, experience_queue, sync_ps, env, args, terminate_event):
 
                 rollout.append(obs, last_action, reward, done, logits.detach())
                 steps += 1
-            
+
+                while terminate_event.is_set():
+                    if args.verbose >= 1:
+                        print(f"Actor {idx} terminating.")
+                    break
             
             # if rollout.length == length:
             #     # rewards += total_reward

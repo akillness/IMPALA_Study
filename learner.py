@@ -81,20 +81,22 @@ def compute_entropy_loss(logits):
     return torch.sum(policy * log_policy)
 
 def compute_policy_gradient_loss(logits, actions, advantages):
-    # cross_entropy = F.nll_loss(
-    #     F.log_softmax(torch.flatten(logits, 0, 1), dim=-1),
-    #     target=torch.flatten(actions, 0, 1),
-    #     reduction="none",
-    # )
-    # cross_entropy = cross_entropy.view_as(advantages)
-    cross_entropy = F.cross_entropy(logits, actions, reduction='none') # sparse_softmax_cross_entropy_with_logits
-    policy_gradient_loss_per_timestep = cross_entropy * advantages.detach() 
-    return torch.sum(policy_gradient_loss_per_timestep)
+    
+    # cross_entropy = F.cross_entropy(logits, actions, reduction='none') # sparse_softmax_cross_entropy_with_logits
+    # policy_gradient_loss_per_timestep = cross_entropy * advantages.detach() 
+    # return torch.sum(policy_gradient_loss_per_timestep)
 
+    cross_entropy = F.nll_loss(
+        F.log_softmax(torch.flatten(logits, 0, 1), dim=-1),
+        target=torch.flatten(actions, 0, 1),
+        reduction="none",
+    )
+    cross_entropy = cross_entropy.view_as(advantages)
+    return torch.sum(cross_entropy * advantages.detach())
+    
 def learner(model, experience_queue, sync_ps, args, terminate_event):
     """Learner to get parameters from IMPALA"""
     
-
     batch_size = args.batch_size
     baseline_cost = args.baseline_cost
     entropy_cost = args.entropy_cost
@@ -102,7 +104,6 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
     save_path = args.save_path
     total_steps = args.total_steps
 
-    
     optimizer = optim.Adam(model.parameters(), lr=args.lr, eps=args.epsilon,
                        weight_decay=args.decay)
 
@@ -110,26 +111,24 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
     scheduler = LambdaLR(optimizer,lr_lambda)
     # scheduler = PolynomialLR(optimizer, total_iters=args.total_steps, power=1.0)
     
-    # # Load state from a checkpoint, if possible.
-    # if os.path.exists(save_path):
-    #     checkpoint_states = torch.load(
-    #         save_path, map_location= torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"), weights_only=True
-    #     )
-    #     model.load_state_dict(checkpoint_states["model_state_dict"])
-    #     optimizer.load_state_dict(checkpoint_states["optimizer_state_dict"])
-    #     scheduler.load_state_dict(checkpoint_states["scheduler_state_dict"])
-        
-    
+    # Load state from a checkpoint, if possible.
+    if os.path.exists(save_path):
+        checkpoint_states = torch.load(
+            save_path, map_location= torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"), weights_only=True
+        )
+        model.load_state_dict(checkpoint_states["model_state_dict"])
+        optimizer.load_state_dict(checkpoint_states["optimizer_state_dict"])
+        scheduler.load_state_dict(checkpoint_states["scheduler_state_dict"])
 
     # TensorBoard SummaryWriter 초기화
     writer = SummaryWriter(log_dir=args.log_dir)
-
     
     batch = []
     best = 0.
     step = 0
     
     while not terminate_event.is_set():
+            
         """Gets trajectory from experience of actors and trains learner."""
         
         total_loss = 0.0 
@@ -158,6 +157,7 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
             continue
 
         # sync_ps.lock.acquire()  # Only one thread learning at a time.
+
         behaviour_logits, obs, actions, rewards, dones, hidden_state = transpose_batch_to_stack(batch)
         # print(f"rewards : {rewards.sum().item()}")
         batch_time = time.time() - start_batch_time
@@ -168,7 +168,8 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
             squeezed = torch.tanh(rewards / 5.0)
             # Negative rewards are given less weight than positive rewards.
             clipped_rewards = torch.where(rewards < 0, 0.3 * squeezed, squeezed) * 5.0
-        
+        else:
+            clipped_rewards = rewards
         
         optimizer.zero_grad()
         
@@ -188,6 +189,7 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         target_log_probs = vtrace.action_log_probs(logits, actions)
         behaviour_log_probs = vtrace.action_log_probs(behaviour_logits, actions)
         log_rhos = target_log_probs - behaviour_log_probs
+
         vs, pg_advantages = vtrace.from_importance_weights(
             log_rhos=log_rhos,
             discounts=discounts,
@@ -203,7 +205,7 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         #     rewards=clipped_rewards,
         #     values=values,
         #     bootstrap_value=bootstrap_value)
-   
+
         
         # baseline_loss, Weighted MSELoss
         advantages = vs-values
@@ -226,7 +228,7 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         torch.nn.utils.clip_grad_norm_(
             model.parameters(), args.global_gradient_norm
         )
-       
+    
         # update optimizaer
         optimizer.step()
         # schedualer update
@@ -241,7 +243,6 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
             # "optimizer_state_dict": optimizer.state_dict(),
             # "scheduler_state_dict": scheduler.state_dict()}
             # ,save_path)
-        
 
         total_loss += loss.item()
         policy_loss += critic_loss.item()
@@ -284,9 +285,8 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         }, step)
         
         # log to console
-        if args.verbose >= 1:
-            # reward_mean = clipped_rewards.mean()
-            print(f"Batch  Mean Clip Reward: {reward_mean} , Loss: {total_loss:.2f}")
+        # if args.verbose >= 1:
+            # print(f"Batch  Mean Clip Reward: {reward_mean} , Loss: {total_loss:.2f}")
             
         step += 1
 
@@ -300,7 +300,6 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
 
         if step >= total_steps:
             terminate_event.set()
-        
         # sync_ps.lock.release() 
         
     print("Exiting leraner process.")

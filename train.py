@@ -80,7 +80,7 @@ if __name__ == '__main__':
                         help='Set the path to load trained model parameters')
     parser.add_argument('--log_dir', type=str, default="./runs/",
                         help='Set the path to check learning state using tensorboard')    
-    parser.add_argument('--reward_clip', type=str, default="soft_asymmetric",
+    parser.add_argument('--reward_clip', type=str, default="abs_one",
                         help='Set clipping reward type, default is "abs_one" (soft_asymmetric,abs_one,no_clip)')
     
     args = parser.parse_args()
@@ -107,7 +107,7 @@ if __name__ == '__main__':
     # model = IMPALA(action_size=args.action_size)
     
     lock = threading.Lock()    
-    sync_ps = SyncParameters(lock)
+    sync_ps = SyncParameters(lock)L,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,.
     sync_ps.push(model.state_dict())
     
     
@@ -158,7 +158,6 @@ if __name__ == '__main__':
             for idx in range(args.actors)]
     # learner
     learner = mp.Process(target=learner, args=(model, experience_queue,sync_ps, args, terminate_event))
-
     # actors of multi-process pool
     actors = [mp.Process(target=actor, args=(idx, experience_queue, sync_ps, envs[idx], args, terminate_event))
               for idx in range(args.actors)]
@@ -169,6 +168,7 @@ if __name__ == '__main__':
     # actor(idx, experience_queue, sync_ps, envs[idx], args, terminate_event)
     [actor.start() for actor in actors]
     [actor.join() for actor in actors]
+
     learner.join()
     # main 프로세스 종료
     print("All processes have been terminated. Exiting main process.")
