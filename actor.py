@@ -2,6 +2,8 @@
 import torch
 from model import IMPALA
 
+from environment import Atari,get_action_size
+
 class Trajectory(object):
     """class to store trajectory data."""
 
@@ -81,17 +83,21 @@ class Trajectory(object):
         return "ok" # End of episode when life lost "Yes"
 
 
-def actor(idx, experience_queue, sync_ps, env, args, terminate_event):
+# def actor(idx, experience_queue, sync_ps, env, args, terminate_event):
+def actor(idx, experience_queue, sync_ps, args, terminate_event):
     steps = 0
     total_steps = args.total_steps
     length = args.length
     action_size = args.action_size
     model = IMPALA(action_size=action_size)
-    init_lstm_state = torch.zeros((2, 1, 256), dtype=torch.float32)
+    init_lstm_state = torch.zeros((2, 1, model.core_output_size), dtype=torch.float32)
     
+    env = Atari(game_name=args.game_name,seed=args.seed)
     
-    """Run the env for n steps and return a trajectory rollout."""
-    env.start()
+    # env = environment.Environment(gym_env)
+    # """Run the env for n steps and return a trajectory rollout."""
+    # gym_env.start()
+    # obs = gym_env.reset()
     obs = env.reset()
     hidden_state = init_lstm_state
     logits = torch.zeros((1, action_size), dtype=torch.float32)
@@ -100,7 +106,7 @@ def actor(idx, experience_queue, sync_ps, env, args, terminate_event):
     done = torch.tensor(False, dtype=torch.bool).view(1, 1)
     init_state = (obs, last_action, reward, done, logits)
     persistent_state = init_state
-    rewards = 0
+    # rewards = 0
     while not terminate_event.is_set():
         # Sync trained model
         with sync_ps.lock:
@@ -113,15 +119,15 @@ def actor(idx, experience_queue, sync_ps, env, args, terminate_event):
         rollout.append(*persistent_state)
         total_reward = 0
         with torch.no_grad():
-            while steps < total_steps:
-            # while True:
+            # while steps < total_steps:
+            while True:
                 if rollout.length == length + 1:
-                    rewards += total_reward
+                    # rewards += total_reward
                     persistent_state = rollout.get_last()
                     rollout.finish()
                     experience_queue.put(rollout)
-                    if args.verbose >= 1:
-                        print("Actor: {} put Steps: {} rewards:{}".format(idx, steps, total_reward))
+                    # if args.verbose >= 1:
+                    #     print("Actor: {} rewards:{}".format(idx, total_reward))
                     break
                 if done:
                     total_reward = 0.
@@ -140,7 +146,7 @@ def actor(idx, experience_queue, sync_ps, env, args, terminate_event):
                 done = torch.tensor(done, dtype=torch.bool).view(1, 1)
 
                 rollout.append(obs, last_action, reward, done, logits.detach())
-                steps += 1
+                # steps += 1
 
                 while terminate_event.is_set():
                     if args.verbose >= 1:

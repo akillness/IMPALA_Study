@@ -84,6 +84,7 @@ if __name__ == '__main__':
                         help='Set clipping reward type, default is "abs_one" (soft_asymmetric,abs_one,no_clip)')
     
     args = parser.parse_args()
+    # game_name="Pong-v0"
     env_args = {'game_name': args.game_name, 'seed': args.seed}
     action_size = get_action_size(Atari, env_args)
     args.action_size = action_size    
@@ -154,20 +155,25 @@ if __name__ == '__main__':
     sync_ps.push(model.state_dict())
     
     # environments of multi-process paired actors
-    envs = [EnvProcess(Atari, env_args)
-            for idx in range(args.actors)]
+    # envs = [EnvProcess(Atari, env_args)
+    #         for idx in range(args.actors)]
+
     # learner
     learner = mp.Process(target=learner, args=(model, experience_queue,sync_ps, args, terminate_event))
+    
     # actors of multi-process pool
-    actors = [mp.Process(target=actor, args=(idx, experience_queue, sync_ps, envs[idx], args, terminate_event))
+    # actors = [mp.Process(target=actor, args=(idx, experience_queue, sync_ps, envs[idx], args, terminate_event))
+    actors = [mp.Process(target=actor, args=(idx, experience_queue, sync_ps, args, terminate_event))
               for idx in range(args.actors)]
     
     # synchronous learning and actors
     learner.start()
-    # idx = 0
-    # actor(idx, experience_queue, sync_ps, envs[idx], args, terminate_event)
+    
     [actor.start() for actor in actors]
     [actor.join() for actor in actors]
+    
+    # idx = 0
+    # actor(idx, experience_queue, sync_ps, args, terminate_event)
 
     learner.join()
     # main 프로세스 종료
