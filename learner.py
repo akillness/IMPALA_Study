@@ -116,9 +116,10 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         checkpoint_states = torch.load(
             save_path, map_location= torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"), weights_only=True
         )
-        model.load_state_dict(checkpoint_states["model_state_dict"])
-        optimizer.load_state_dict(checkpoint_states["optimizer_state_dict"])
-        scheduler.load_state_dict(checkpoint_states["scheduler_state_dict"])
+        model.load_state_dict(checkpoint_states)
+        # model.load_state_dict(checkpoint_states["model_state_dict"])
+        # optimizer.load_state_dict(checkpoint_states["optimizer_state_dict"])
+        # scheduler.load_state_dict(checkpoint_states["scheduler_state_dict"])
 
     # TensorBoard SummaryWriter 초기화
     writer = SummaryWriter(log_dir=args.log_dir)
@@ -247,9 +248,10 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         total_loss += loss.item()
         policy_loss += critic_loss.item()
         entropy_loss += entropy.item()
-        reward += rewards.mean().item()
-        reward_mean += clipped_rewards.mean().item()
-        reward_sum += clipped_rewards.sum().item()
+
+        
+        reward_mean += rewards.mean().item()
+        reward += rewards.sum().item()
 
         # Importance sampling ratio 기록
         importance_sampling_ratios = torch.exp(logits-behaviour_logits)
@@ -269,7 +271,7 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         # writer.add_scalar('Rewards_sum',reward_sum,step)
         writer.add_scalars('Rewards', {
             'mean': reward_mean,
-            'sum': reward_sum
+            'sum': reward
         }, step)
         
         writer.add_scalars('Importance_sampling_ratio', {

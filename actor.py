@@ -121,15 +121,14 @@ def actor(idx, experience_queue, sync_ps, env, args, terminate_event):
                     rollout.finish()
                     experience_queue.put(rollout)
                     if args.verbose >= 1:
-                        print("Actor: {} put Steps: {} rewards:{}".format(idx, steps, rewards))
+                        print("Actor: {} put Steps: {} rewards:{}".format(idx, steps, total_reward))
                     break
                 if done:
                     total_reward = 0.
-                    # steps = 0
                     hidden_state = init_lstm_state
                     __, last_action, reward, done, _ = init_state
                     obs = env.reset()
-                    # break
+                    
                 # action, logits, hidden_state = model(obs.unsqueeze(0).unsqueeze(1), last_action, reward, done, hidden_state, actor=True)
                 action, logits, hidden_state = model(obs.unsqueeze(0), last_action, reward, done, hidden_state, actor=True)
                           
