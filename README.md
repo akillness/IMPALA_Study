@@ -47,6 +47,7 @@ Implement IMPALA for CartPole-v1 of gym (or gymnasium) with the following requir
 
 ## 논문리뷰 ( 키워드 정리 )
 
+~~~sh
 |-----------------|     |-----------------|                  |-----------------|
 |     ACTOR 1     |     |     ACTOR 2     |                  |     ACTOR n     |
 |-------|         |     |-------|         |                  |-------|         |
@@ -67,7 +68,8 @@ Implement IMPALA for CartPole-v1 of gym (or gymnasium) with the following requir
      Learner      |.........       model weights         |
       sends       |--------------------------------------|
      weights
-     
+~~~
+
 Actor-Learner -> 폴리시의 gradient를 보내면던 A3C와 다르게 State를 전달함으로서, Policy-lag 에 효과적
 Optimisation -> 일반적인 RL은 Conv-net 특징점 / LSTM , Time dimensiont 을 Batch dimension
 V-Trace 
