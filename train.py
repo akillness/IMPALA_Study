@@ -84,7 +84,6 @@ if __name__ == '__main__':
                         help='Set clipping reward type, default is "abs_one" (soft_asymmetric,abs_one,no_clip)')
     
     args = parser.parse_args()
-    # game_name="Pong-v0"
     env_args = {'game_name': args.game_name, 'seed': args.seed}
     action_size = get_action_size(Atari, env_args)
     args.action_size = action_size    

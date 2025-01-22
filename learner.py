@@ -229,20 +229,17 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         
         # policy gradient loss
         pg_loss = compute_policy_gradient_loss(logits,actions,pg_advantages)
-        # loss += compute_policy_gradient_loss(logits,actions,pg_advantages)
 
         # baseline_loss, Weighted MSELoss
-        # advantages = vs-values
         critic_loss = baseline_cost * compute_baseline_loss(vs-values)
-        # loss = baseline_cost * critic_loss
 
         # entropy_loss
         entropy_loss = entropy_cost * compute_entropy_loss(logits)
-        # loss += entropy
         
+        # total loss 
         total_loss = pg_loss + critic_loss + entropy_loss
 
-
+        # Update Optimizaer
         optimizer.zero_grad()
         # check backward time
         start_backward_time = time.time()
@@ -250,7 +247,7 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         # loss.backward()
         backward_time = time.time() - start_backward_time
 
-        # omptimisation
+        # Omptimisation
         torch.nn.utils.clip_grad_norm_(
             model.parameters(), args.global_gradient_norm
         )
@@ -260,11 +257,11 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         # schedualer update
         scheduler.step()
         
+        # Save the trained model
         model.cpu()
-        # torch.save(model.state_dict(), save_path)
-        sync_ps.push(model.state_dict())
-        
+        sync_ps.push(model.state_dict())        
         if clipped_rewards.mean().item() > best:
+            # torch.save(model.state_dict(), save_path)
             torch.save(
             {"model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
@@ -273,6 +270,7 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
             # best update
             best = clipped_rewards.mean().item()
 
+        # Tensorboard 용 
         total_loss += total_loss.item()
         policy_loss += critic_loss.item()
         entropy_loss += entropy_loss.item()
@@ -294,8 +292,6 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
 
         writer.add_scalar('Learning_rate',scheduler.get_last_lr()[0], step )
         
-        # writer.add_scalar('Rewards_mean',reward_mean,step)
-        # writer.add_scalar('Rewards_sum',reward_sum,step)
         writer.add_scalars('Rewards', {
             'mean': reward_mean,
             'sum': reward
@@ -315,7 +311,7 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         
         # log to console
         if args.verbose >= 1:
-            print(f"Batch  Mean Clip Reward: {reward_mean:.2f} , Loss: {total_loss:.2f}")
+            print(f"Step: {step} , Batch Mean Clip Reward: {reward_mean:.2f} , Loss: {total_loss:.6f}")
         
         step += 1
 
