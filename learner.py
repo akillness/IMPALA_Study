@@ -54,7 +54,7 @@ def transpose_batch_to_stack(batch):
     actions = []
     rewards = []
     dones = []
-    hidden_state = []
+    core_state = []
     logits = []
     for t in batch:
         obs.append(t.obs)
@@ -62,14 +62,16 @@ def transpose_batch_to_stack(batch):
         dones.append(t.dones)
         actions.append(t.actions)
         logits.append(t.logit)
-        hidden_state.append(t.lstm_hidden_state)
+        core_state.append(t.lstm_core_state)
+
     obs = torch.stack(obs).transpose(0, 1)
     actions = torch.stack(actions).transpose(0, 1)
     rewards = torch.stack(rewards).transpose(0, 1)
     dones = torch.stack(dones).transpose(0, 1)
     logits = torch.stack(logits).permute(1, 2, 0)
-    hidden_state = torch.stack(hidden_state).transpose(0, 1)
-    return logits, obs, actions, rewards, dones, hidden_state
+    # logits = torch.stack(logits).permute(0, 2, 1)
+    core_state = torch.stack(core_state).transpose(0, 1)
+    return logits, obs, actions, rewards, dones, core_state
 
 def compute_baseline_loss(advantages):
     return 0.5 * torch.sum(advantages ** 2)
@@ -170,29 +172,32 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
 
         # sync_ps.lock.acquire()  # Only one thread learning at a time.
 
-        behavior_logits, obs, actions, rewards, dones, hidden_state = transpose_batch_to_stack(batch)
+        behavior_logits, obs, actions, rewards, dones, core_state = transpose_batch_to_stack(batch)
         # print(f"rewards : {rewards.sum().item()}")
         batch_time = time.time() - start_batch_time
 
-        if args.reward_clip == 'abs_one':
+        if args.reward_clip == "abs_one":
             clipped_rewards = torch.clamp(rewards, -1, 1)
         elif args.reward_clip == 'soft_asymmetric':
             squeezed = torch.tanh(rewards / 5.0)
             # Negative rewards are given less weight than positive rewards.
             clipped_rewards = torch.where(rewards < 0, 0.3 * squeezed, squeezed) * 5.0
-        else:
+        elif args.reward_clip == "none":
             clipped_rewards = rewards
-        
-        
         
         # check forward time 
         start_forward_time = time.time()
-        logits, values = model(obs, actions, clipped_rewards, dones, hidden_state=hidden_state)
+        logits, values = model(obs, actions, rewards, dones, core_state=core_state)
         forward_time = time.time() - start_forward_time
 
-        bootstrap_value = values[-1]
+        
         actions, behavior_logits, dones, clipped_rewards = actions[1:], behavior_logits[1:], dones[1:], clipped_rewards[1:]
+
+        bootstrap_value = values[-1]
         logits, values = logits[:-1], values[:-1]
+
+        # bootstrap_value = logits['baseline'][-1]
+        # logits, values = logits['policy_logits'][:-1], logits['baseline'][:-1]
 
         discounts = (~dones).float() * gamma
         

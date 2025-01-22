@@ -15,7 +15,7 @@ class Trajectory(object):
         self.logit = []
         self.last_actions = []
         self.actor_id = None
-        self.lstm_hidden_state = None
+        self.lstm_core_state = None
         self.max_size = max_size
         self.cur_size = 0
     
@@ -53,7 +53,7 @@ class Trajectory(object):
         self.obs = self.obs.cuda()
         self.actions = self.actions.cuda()
         self.dones = self.dones.cuda()
-        self.lstm_hidden_state = self.lstm_hidden_state.cuda()
+        self.lstm_core_state = self.lstm_core_state.cuda()
         self.rewards = self.rewards.cuda()
         self.logit = self.logit.cuda()
 
@@ -62,7 +62,7 @@ class Trajectory(object):
         self.obs = self.obs.to(device)
         self.actions = self.actions.to(device)
         self.dones = self.dones.to(device)
-        self.lstm_hidden_state = self.lstm_hidden_state.to(device)
+        self.lstm_core_state = self.lstm_core_state.to(device)
         self.rewards = self.rewards.to(device)
         self.logit = self.logit.to(device)
 
@@ -90,7 +90,7 @@ def actor(idx, experience_queue, sync_ps, args, terminate_event):
     length = args.length
     action_size = args.action_size
     model = IMPALA(action_size=action_size)
-    init_lstm_state = torch.zeros((2, 1, model.core_output_size), dtype=torch.float32)
+    init_lstm_state = model.inital_state()
     
     env = Atari(game_name=args.game_name,seed=args.seed)
     
@@ -99,7 +99,7 @@ def actor(idx, experience_queue, sync_ps, args, terminate_event):
     # gym_env.start()
     # obs = gym_env.reset()
     obs = env.reset()
-    hidden_state = init_lstm_state
+    core_state = init_lstm_state
     logits = torch.zeros((1, action_size), dtype=torch.float32)
     last_action = torch.zeros((1, 1), dtype=torch.int64)
     reward = torch.tensor(0, dtype=torch.float32).view(1, 1)
@@ -115,7 +115,8 @@ def actor(idx, experience_queue, sync_ps, args, terminate_event):
         # rollout.clear()
         rollout = Trajectory(max_size=length)
         rollout.actor_id = idx
-        rollout.lstm_hidden_state = hidden_state.squeeze()
+        rollout.lstm_core_state = core_state.squeeze()
+        # rollout.lstm_core_state = core_state
         rollout.append(*persistent_state)
         total_reward = 0
         with torch.no_grad():
@@ -136,17 +137,18 @@ def actor(idx, experience_queue, sync_ps, args, terminate_event):
 
                     total_reward = 0.
                     steps = 0
-                    hidden_state = init_lstm_state
+                    core_state = init_lstm_state
                     __, last_action, reward, done, _ = init_state
                     obs = env.reset()
 
                     
                 # action, logits, hidden_state = model(obs.unsqueeze(0).unsqueeze(1), last_action, reward, done, hidden_state, actor=True)
-                action, logits, hidden_state = model(obs.unsqueeze(0), last_action, reward, done, hidden_state, actor=True)
+                action, logits, core_state = model(obs.unsqueeze(0), last_action, reward, done, core_state, actor=True)
                           
                 obs, reward, done = env.step(action)
                 total_reward += reward
 
+                # logits = torch.tensor(agent_output['policy_logits'], dtype=torch.float32).view(-1, 1)                
                 last_action = torch.tensor(action, dtype=torch.int64).view(1, 1)
                 reward = torch.tensor(total_reward, dtype=torch.float32).view(1, 1)
                 done = torch.tensor(done, dtype=torch.bool).view(1, 1)

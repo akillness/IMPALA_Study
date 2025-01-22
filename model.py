@@ -131,6 +131,7 @@ class IMPALA(nn.Module):
         last_action = torch.zeros(last_action.shape[0], self.action_space,
                                   dtype=torch.float32, device=input_tensor.device).scatter_(1, last_action, 1)
         '''
+        # 3-layer Convolutional Filter 이용해 Feature Extraction
         # x = convnet_forward(x) <-- resdual conv는 고려
         x = F.relu(self.conv1(x), inplace=True)
         x = F.relu(self.conv2(x), inplace=True)
@@ -146,6 +147,10 @@ class IMPALA(nn.Module):
         x = torch.cat((x, reward, last_action), dim=1)
         x = x.view(seq_len, batch_size, -1)
         '''
+
+        # Residual Convolutional Filter 이용해 Feature Extraction
+        # Add Reward Clipping feature
+        # Add Action feature
         res_input = None
         for i, fconv in enumerate(self.feat_convs):
             x = fconv(x)
@@ -160,7 +165,8 @@ class IMPALA(nn.Module):
         x = x.view(x.shape[0], -1)
         x = F.relu(self.fc(x))
 
-        x = torch.cat((x, reward, last_action), dim=1)
+        clipped_rewards = torch.clamp(reward, -1, 1)
+        x = torch.cat((x, clipped_rewards, last_action), dim=1)
         x = x.view(seq_len, batch_size, -1)
 
         # sequential to conv
