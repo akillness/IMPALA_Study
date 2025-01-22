@@ -41,16 +41,12 @@ Implement IMPALA for CartPole-v1 of gym (or gymnasium) with the following requir
   
 - Submit your code and report together in the form of '.zip' file.
 - Your code and report is going to be used for the technical interview.
-- 제출기한 : October 23, 2024 로부터 **10 일** 후 자정까지 제출 
 
 
 
 ## 논문리뷰 ( 키워드 정리 )
-Actor-Learner -> 폴리시의 gradient를 보내면던 A3C와 다르게 State를 전달함으로서, Policy-lag 에 효과적
-Optimisation -> 일반적인 RL은 Conv-net 특징점 / LSTM , Time dimensiont 을 Batch dimension
-V-Trace 
- -> 로컬 폴리시 뮤 를  진행중인 폴리시 파이로 얻기 위한 Target 폴리시로 trajectories 를 얻음 ( called behavior policy )
- -> off-policy는 behavior policy로 얻어진 trajectories를 이용하여 다른 폴리시 파이의 Value function을 학습 ( 뮤와 는 다른 ) ( called target policy )
+
+
 
 
 V-trace 알고리즘이 on-policy n-steps Bellman 업데이트로 축소되는 이유는 다음과 같습니다:
@@ -90,6 +86,38 @@ V-trace 알고리즘은 중요도 샘플링 비율(importance sampling ratio)
 ## 개념정리
 IMPALA (Importance Weighted Actor-Learner Architectures)는 DeepMind에서 개발한 분산 심층 강화 학습 프레임워크입니다. 이 아키텍처는 대규모 데이터와 긴 학습 시간을 효율적으로 처리하기 위해 설계되었습니다. 다음은 IMPALA의 주요 개념과 구조에 대한 설명
 
+~~~sh
+|-----------------|     |-----------------|                  |-----------------|
+|     ACTOR 1     |     |     ACTOR 2     |                  |     ACTOR n     |
+|-------|         |     |-------|         |                  |-------|         |
+|       |  .......|     |       |  .......|     .   .   .    |       |  .......|
+|  Env  |<-.Model.|     |  Env  |<-.Model.|                  |  Env  |<-.Model.|
+|       |->.......|     |       |->.......|                  |       |->.......|
+|-----------------|     |-----------------|                  |-----------------|
+   ^     I                 ^     I                              ^     I
+   |     I                 |     I                              |     I Actors
+   |     I rollout         |     I rollout               weights|     I send
+   |     I                 |     I                     /--------/     I rollouts
+   |     I          weights|     I                     |              I (frames,
+   |     I                 |     I                     |              I  actions
+   |     I                 |     v                     |              I  etc)
+   |     L=======>|--------------------------------------|<===========J
+   |              |.........      LEARNER                |
+   \--------------|..Model.. Consumes rollouts, updates  |
+     Learner      |.........       model weights         |
+      sends       |--------------------------------------|
+     weights
+~~~
+
+- 참고 : [https://enfow.github.io/paper-review/reinforcement-learning/parallel-rl/2021/10/17/scalabel_distributed_deep_rl_with_importance_weighted_actor_learner/](https://enfow.github.io/paper-review/reinforcement-learning/parallel-rl/2021/10/17/scalabel_distributed_deep_rl_with_importance_weighted_actor_learner/)
+- 참고코드  : [https://github.com/facebookresearch/torchbeast/tree/main/torchbeast](https://github.com/facebookresearch/torchbeast/tree/main/torchbeast)
+
+Actor-Learner -> 폴리시의 gradient를 보내면던 A3C와 다르게 State를 전달함으로서, Policy-lag 에 효과적
+Optimisation -> 일반적인 RL은 Conv-net 특징점 / LSTM , Time dimensiont 을 Batch dimension
+V-Trace 
+ -> 로컬 폴리시 뮤 를  진행중인 폴리시 파이로 얻기 위한 Target 폴리시로 trajectories 를 얻음 ( called behavior policy )
+ -> off-policy는 behavior policy로 얻어진 trajectories를 이용하여 다른 폴리시 파이의 Value function을 학습 ( 뮤와 는 다른 ) ( called target policy )
+ 
 1.  **Actor-Learner 구조**
 IMPALA는 여러 개의 Actor와 Learner로 구성됩니다.
 * **Actors**: 환경에서 행동을 수행하고 경험을 수집합니다. 각 Actor는 정책을 사용하여 환경과 상호작용하고, 상태, 행동, 보상 등의 데이터를 수집합니다.
