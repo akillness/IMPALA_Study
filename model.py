@@ -45,29 +45,83 @@ def convnet_forward(state):
     return conv_out
 
 class IMPALA(nn.Module):
-    def __init__(self, action_size=16, input_channels=4, hidden_size=512):
+    def __init__(self, action_size=16, input_channels=4, hidden_size=256):
         super(IMPALA, self).__init__()
         self.action_space = action_size
-
+        '''
         self.conv1 = nn.Conv2d(input_channels, 32, 8, stride=4, padding=1)
         self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
         self.conv3 = nn.Conv2d(64, 64, 3)
 
-        
         self.fc = nn.Linear(3136, hidden_size)
         # self.fc = nn.Linear(2304, hidden_size) <-- resdual conv 사용시
         # self.fc = nn.Linear(16,hidden_size)
-        
+        '''
+        self.feat_convs = []
+        self.resnet1 = []
+        self.resnet2 = []
+
+        input_channels = 4
+        for num_ch in [16, 32, 32]:
+            feats_convs = []
+            feats_convs.append(
+                nn.Conv2d(
+                    in_channels=input_channels,
+                    out_channels=num_ch,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                )
+            )
+            feats_convs.append(nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+            self.feat_convs.append(nn.Sequential(*feats_convs))
+
+            input_channels = num_ch
+
+            for i in range(2):
+                resnet_block = []
+                resnet_block.append(nn.ReLU())
+                resnet_block.append(
+                    nn.Conv2d(
+                        in_channels=input_channels,
+                        out_channels=num_ch,
+                        kernel_size=3,
+                        stride=1,
+                        padding=1,
+                    )
+                )
+                resnet_block.append(nn.ReLU())
+                resnet_block.append(
+                    nn.Conv2d(
+                        in_channels=input_channels,
+                        out_channels=num_ch,
+                        kernel_size=3,
+                        stride=1,
+                        padding=1,
+                    )
+                )
+                if i == 0:
+                    self.resnet1.append(nn.Sequential(*resnet_block))
+                else:
+                    self.resnet2.append(nn.Sequential(*resnet_block))
+
+        self.feat_convs = nn.ModuleList(self.feat_convs)
+        self.resnet1 = nn.ModuleList(self.resnet1)
+        self.resnet2 = nn.ModuleList(self.resnet2)
+
+        self.fc = nn.Linear(3872, hidden_size)
+
         # FC output size + one-hot of last action + last reward.
         self.core_output_size = self.fc.out_features + action_size + 1
+        self.hidden_size = hidden_size
         # self.lstm = nn.LSTMCell(hidden_size + action_size + 1, 64)
-        self.lstm = nn.LSTMCell(self.core_output_size, self.core_output_size)
+        self.lstm = nn.LSTMCell(self.core_output_size, self.hidden_size)
         # self.core = nn.LSTM(core_output_size, core_output_size, 2)
         
-        self.actor_critic = ActorCritic(self.core_output_size, action_size)
+        self.actor_critic = ActorCritic(self.hidden_size, action_size)
     
     def inital_state(self,batch_size=1):
-        return torch.zeros((2, batch_size, self.core_output_size), dtype=torch.float32)
+        return torch.zeros((2, batch_size, self.hidden_size), dtype=torch.float32)
     
     def forward(self, input_tensor, last_action, reward, done_flags, core_state=None, actor=False):
         # state 의 trajectory의 길이 단위별로 history 설정 및 batch size 만큼 차원변경
@@ -76,7 +130,7 @@ class IMPALA(nn.Module):
         seq_len, batch_size, x, last_action, reward = reshape_stacked_state_dim(input_tensor, last_action, reward, actor)
         last_action = torch.zeros(last_action.shape[0], self.action_space,
                                   dtype=torch.float32, device=input_tensor.device).scatter_(1, last_action, 1)
-        
+        '''
         # x = convnet_forward(x) <-- resdual conv는 고려
         x = F.relu(self.conv1(x), inplace=True)
         x = F.relu(self.conv2(x), inplace=True)
@@ -88,6 +142,23 @@ class IMPALA(nn.Module):
 
         x = F.relu(self.fc(x), inplace=True)
         # x = F.leaky_relu(self.fc(x), inplace=True)
+
+        x = torch.cat((x, reward, last_action), dim=1)
+        x = x.view(seq_len, batch_size, -1)
+        '''
+        res_input = None
+        for i, fconv in enumerate(self.feat_convs):
+            x = fconv(x)
+            res_input = x
+            x = self.resnet1[i](x)
+            x += res_input
+            res_input = x
+            x = self.resnet2[i](x)
+            x += res_input
+
+        x = F.relu(x)
+        x = x.view(x.shape[0], -1)
+        x = F.relu(self.fc(x))
 
         x = torch.cat((x, reward, last_action), dim=1)
         x = x.view(seq_len, batch_size, -1)
