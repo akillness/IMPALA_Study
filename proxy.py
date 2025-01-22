@@ -9,8 +9,9 @@ class SyncParameters(object):
         self.weight = None
 
     def pull(self):
-        with self.lock:
-            return self.weight
+        # with self.lock:
+        #     return self.weight
+        return self.weight
 
     def push(self, weigth):
         with self.lock:

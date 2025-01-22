@@ -32,7 +32,6 @@ import collections
 import torch
 import torch.nn.functional as F
 
-
 VTraceFromLogitsReturns = collections.namedtuple(
     "VTraceFromLogitsReturns",
     [
@@ -46,17 +45,12 @@ VTraceFromLogitsReturns = collections.namedtuple(
 
 VTraceReturns = collections.namedtuple("VTraceReturns", "vs pg_advantages")
 
-
 def action_log_probs(policy_logits, actions):
-    # return -F.nll_loss(
-    #     F.log_softmax(torch.flatten(policy_logits, 0, -2), dim=-1),
-    #     torch.flatten(actions),
-    #     reduction="none",
-    # ).view_as(actions)
-    assert len(policy_logits.shape) == 3, "policy_logits should have rank 3"
-    assert len(actions.shape) == 2, "actions should have rank 2"
-
-    return -F.cross_entropy(policy_logits, actions, reduction='none')
+    return -F.nll_loss(
+        F.log_softmax(torch.flatten(policy_logits, 0, -2), dim=-1),
+        torch.flatten(actions),
+        reduction="none",
+    ).view_as(actions)
 
 
 def from_logits(
@@ -71,9 +65,12 @@ def from_logits(
     clip_pg_rho_threshold=1.0,
 ):
     """V-trace for softmax policies."""
-
+    # 행동 정책과 목표 정책의 로그 확률 계산
+    # 선택된 행동의 로그 확률 추출
     target_action_log_probs = action_log_probs(target_policy_logits, actions)
     behavior_action_log_probs = action_log_probs(behavior_policy_logits, actions)
+
+    # 로그 중요도 샘플링 비율 계산
     log_rhos = target_action_log_probs - behavior_action_log_probs
     vtrace_returns = from_importance_weights(
         log_rhos=log_rhos,
@@ -84,12 +81,14 @@ def from_logits(
         clip_rho_threshold=clip_rho_threshold,
         clip_pg_rho_threshold=clip_pg_rho_threshold,
     )
-    return VTraceFromLogitsReturns(
-        log_rhos=log_rhos,
-        behavior_action_log_probs=behavior_action_log_probs,
-        target_action_log_probs=target_action_log_probs,
-        **vtrace_returns._asdict(),
-    )
+
+    return vtrace_returns
+    # return VTraceFromLogitsReturns(
+    #     **vtrace_returns._asdict(),
+    #     log_rhos=log_rhos,
+    #     behavior_action_log_probs=behavior_action_log_probs,
+    #     target_action_log_probs=target_action_log_probs,
+    # )
 
 
 @torch.no_grad()

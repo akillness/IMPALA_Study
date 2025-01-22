@@ -54,7 +54,7 @@ def transpose_batch_to_stack(batch):
     actions = []
     rewards = []
     dones = []
-    hidden_state = []
+    core_state = []
     logits = []
     for t in batch:
         obs.append(t.obs)
@@ -62,14 +62,16 @@ def transpose_batch_to_stack(batch):
         dones.append(t.dones)
         actions.append(t.actions)
         logits.append(t.logit)
-        hidden_state.append(t.lstm_hidden_state)
+        core_state.append(t.lstm_core_state)
+
     obs = torch.stack(obs).transpose(0, 1)
     actions = torch.stack(actions).transpose(0, 1)
     rewards = torch.stack(rewards).transpose(0, 1)
     dones = torch.stack(dones).transpose(0, 1)
     logits = torch.stack(logits).permute(1, 2, 0)
-    hidden_state = torch.stack(hidden_state).transpose(0, 1)
-    return logits, obs, actions, rewards, dones, hidden_state
+    # logits = torch.stack(logits).permute(0, 2, 1)
+    core_state = torch.stack(core_state).transpose(0, 1)
+    return logits, obs, actions, rewards, dones, core_state
 
 def compute_baseline_loss(advantages):
     return 0.5 * torch.sum(advantages ** 2)
@@ -81,20 +83,22 @@ def compute_entropy_loss(logits):
     return torch.sum(policy * log_policy)
 
 def compute_policy_gradient_loss(logits, actions, advantages):
-    # cross_entropy = F.nll_loss(
-    #     F.log_softmax(torch.flatten(logits, 0, 1), dim=-1),
-    #     target=torch.flatten(actions, 0, 1),
-    #     reduction="none",
-    # )
-    # cross_entropy = cross_entropy.view_as(advantages)
-    cross_entropy = F.cross_entropy(logits, actions, reduction='none') # sparse_softmax_cross_entropy_with_logits
-    policy_gradient_loss_per_timestep = cross_entropy * advantages.detach() 
-    return torch.sum(policy_gradient_loss_per_timestep)
+    
+    # cross_entropy = F.cross_entropy(logits, actions, reduction='none') # sparse_softmax_cross_entropy_with_logits
+    # policy_gradient_loss_per_timestep = cross_entropy * advantages.detach() 
+    # return torch.sum(policy_gradient_loss_per_timestep)
 
+    cross_entropy = F.nll_loss(
+        F.log_softmax(torch.flatten(logits, 0, 1), dim=-1),
+        target=torch.flatten(actions, 0, 1),
+        reduction="none",
+    )
+    cross_entropy = cross_entropy.view_as(advantages)
+    return torch.sum(cross_entropy * advantages.detach())
+    
 def learner(model, experience_queue, sync_ps, args, terminate_event):
     """Learner to get parameters from IMPALA"""
     
-
     batch_size = args.batch_size
     baseline_cost = args.baseline_cost
     entropy_cost = args.entropy_cost
@@ -102,42 +106,50 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
     save_path = args.save_path
     total_steps = args.total_steps
 
-    
     optimizer = optim.Adam(model.parameters(), lr=args.lr, eps=args.epsilon,
                        weight_decay=args.decay)
 
+    # optimizer = torch.optim.RMSprop(
+    #     model.parameters(),
+    #     lr=args.lr,
+    #     momentum=args.momentum,
+    #     eps=args.epsilon,
+    #     alpha=args.decay,
+    # )
+
     lr_lambda = lambda epoch : 1 - min(epoch * args.length * args.batch_size, args.total_steps) / args.total_steps
     scheduler = LambdaLR(optimizer,lr_lambda)
+    
     # scheduler = PolynomialLR(optimizer, total_iters=args.total_steps, power=1.0)
     
-    # # Load state from a checkpoint, if possible.
-    # if os.path.exists(save_path):
-    #     checkpoint_states = torch.load(
-    #         save_path, map_location= torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"), weights_only=True
-    #     )
-    #     model.load_state_dict(checkpoint_states["model_state_dict"])
-    #     optimizer.load_state_dict(checkpoint_states["optimizer_state_dict"])
-    #     scheduler.load_state_dict(checkpoint_states["scheduler_state_dict"])
+    # Load state from a checkpoint, if possible.
+    if os.path.exists(save_path):
+        checkpoint_states = torch.load(
+            save_path, map_location= torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"), weights_only=True
+        )
+        # model.load_state_dict(checkpoint_states)
+        model.load_state_dict(checkpoint_states["model_state_dict"])
+        optimizer.load_state_dict(checkpoint_states["optimizer_state_dict"])
+        scheduler.load_state_dict(checkpoint_states["scheduler_state_dict"])
         
-    
 
     # TensorBoard SummaryWriter 초기화
     writer = SummaryWriter(log_dir=args.log_dir)
-
     
     batch = []
     best = 0.
     step = 0
     
     while not terminate_event.is_set():
+            
         """Gets trajectory from experience of actors and trains learner."""
         
         total_loss = 0.0 
         policy_loss = 0.0 
-        entropy_loss = 0.0 
+        entropy_loss = 0.0
+
         reward = 0.0
         reward_mean = 0.0 
-        reward_sum = 0.0 
         
         # check batch time
         start_batch_time = time.time()
@@ -145,6 +157,7 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         trajectory = experience_queue.get()
         
         # print(f"rewards : {trajectory.rewards.sum()}")
+        # batch.clear()
         batch.append(trajectory)
         if torch.cuda.is_available():
             trajectory.cuda()
@@ -158,100 +171,115 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
             continue
 
         # sync_ps.lock.acquire()  # Only one thread learning at a time.
-        behaviour_logits, obs, actions, rewards, dones, hidden_state = transpose_batch_to_stack(batch)
+
+        behavior_logits, obs, actions, rewards, dones, core_state = transpose_batch_to_stack(batch)
         # print(f"rewards : {rewards.sum().item()}")
         batch_time = time.time() - start_batch_time
 
-        if args.reward_clip == 'abs_one':
+        if args.reward_clip == "abs_one":
             clipped_rewards = torch.clamp(rewards, -1, 1)
         elif args.reward_clip == 'soft_asymmetric':
             squeezed = torch.tanh(rewards / 5.0)
             # Negative rewards are given less weight than positive rewards.
             clipped_rewards = torch.where(rewards < 0, 0.3 * squeezed, squeezed) * 5.0
-        
-        
-        optimizer.zero_grad()
+        elif args.reward_clip == "none":
+            clipped_rewards = rewards
         
         # check forward time 
         start_forward_time = time.time()
-        logits, values = model(obs, actions, clipped_rewards, dones, hidden_state=hidden_state)
+        logits, values = model(obs, actions, rewards, dones, core_state=core_state)
         forward_time = time.time() - start_forward_time
 
+        
+        actions, behavior_logits, dones, clipped_rewards = actions[1:], behavior_logits[1:], dones[1:], clipped_rewards[1:]
+
         bootstrap_value = values[-1]
-        actions, behaviour_logits, dones, clipped_rewards = actions[1:], behaviour_logits[1:], dones[1:], clipped_rewards[1:]
         logits, values = logits[:-1], values[:-1]
+
+        # bootstrap_value = logits['baseline'][-1]
+        # logits, values = logits['policy_logits'][:-1], logits['baseline'][:-1]
 
         discounts = (~dones).float() * gamma
         
+        # 행동 정책과 목표 정책의 로그 확률 계산
+        # 선택된 행동의 로그 확률 추출
+        target_action_log_probs = vtrace.action_log_probs(logits, actions)
+        behavior_action_log_probs = vtrace.action_log_probs(behavior_logits, actions)
+
+        # 로그 중요도 샘플링 비율 계산
+        log_rhos = target_action_log_probs - behavior_action_log_probs
         # compute value estimates and logits for observed states
         # compute log probs for current and old policies
-        target_log_probs = vtrace.action_log_probs(logits, actions)
-        behaviour_log_probs = vtrace.action_log_probs(behaviour_logits, actions)
-        log_rhos = target_log_probs - behaviour_log_probs
         vs, pg_advantages = vtrace.from_importance_weights(
             log_rhos=log_rhos,
             discounts=discounts,
             rewards=clipped_rewards,
             values=values,
-            bootstrap_value=bootstrap_value)
-        
+            bootstrap_value=bootstrap_value,
+        )
+
         # vs, pg_advantages = vtrace.from_logits(
-        #     behaviour_policy_logits=behaviour_logits,
+        #     behavior_policy_logits=behavior_logits,
         #     target_policy_logits=logits,
         #     actions=actions,
         #     discounts=discounts,
         #     rewards=clipped_rewards,
         #     values=values,
         #     bootstrap_value=bootstrap_value)
-   
         
-        # baseline_loss, Weighted MSELoss
-        advantages = vs-values
-        critic_loss = compute_baseline_loss(advantages)
-        loss = baseline_cost * critic_loss
-
         # policy gradient loss
-        loss += compute_policy_gradient_loss(logits,actions,pg_advantages)
+        pg_loss = compute_policy_gradient_loss(logits,actions,pg_advantages)
+
+        # baseline_loss, Weighted MSELoss
+        critic_loss = baseline_cost * compute_baseline_loss(vs-values)
 
         # entropy_loss
-        entropy = entropy_cost * compute_entropy_loss(logits)
-        loss += entropy
+        entropy_loss = entropy_cost * compute_entropy_loss(logits)
+        
+        # total loss 
+        total_loss = pg_loss + critic_loss + entropy_loss
 
+        # Update Optimizaer
+        optimizer.zero_grad()
         # check backward time
         start_backward_time = time.time()
-        loss.backward()
+        total_loss.backward()
+        # loss.backward()
         backward_time = time.time() - start_backward_time
 
-        # omptimisation
+        # Omptimisation
         torch.nn.utils.clip_grad_norm_(
             model.parameters(), args.global_gradient_norm
         )
-       
+    
         # update optimizaer
         optimizer.step()
         # schedualer update
         scheduler.step()
+        
+        # Save the trained model
         model.cpu()
-        
-        sync_ps.push(model.state_dict())
+        sync_ps.push(model.state_dict())        
         if clipped_rewards.mean().item() > best:
-            torch.save(model.state_dict(), save_path)
-            # torch.save(
-            # {"model_state_dict": model.state_dict(),
-            # "optimizer_state_dict": optimizer.state_dict(),
-            # "scheduler_state_dict": scheduler.state_dict()}
-            # ,save_path)
-        
+            # torch.save(model.state_dict(), save_path)
+            torch.save(
+            {"model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict()}
+            ,save_path)
+            # best update
+            best = clipped_rewards.mean().item()
 
-        total_loss += loss.item()
+        # Tensorboard 용 
+        total_loss += total_loss.item()
         policy_loss += critic_loss.item()
-        entropy_loss += entropy.item()
-        reward += rewards.mean().item()
-        reward_mean += clipped_rewards.mean().item()
-        reward_sum += clipped_rewards.sum().item()
+        entropy_loss += entropy_loss.item()
+
+        reward_mean += rewards.mean().item()
+        reward += rewards.sum().item()
 
         # Importance sampling ratio 기록
-        importance_sampling_ratios = torch.exp(logits-behaviour_logits)
+        importance_sampling_ratios = torch.exp(log_rhos)
         
         # TensorBoard에 손실 및 보상 기록
         writer.add_scalars('Loss',{
@@ -264,11 +292,9 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
 
         writer.add_scalar('Learning_rate',scheduler.get_last_lr()[0], step )
         
-        # writer.add_scalar('Rewards_mean',reward_mean,step)
-        # writer.add_scalar('Rewards_sum',reward_sum,step)
         writer.add_scalars('Rewards', {
             'mean': reward_mean,
-            'sum': reward_sum
+            'sum': reward
         }, step)
         
         writer.add_scalars('Importance_sampling_ratio', {
@@ -285,9 +311,8 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         
         # log to console
         if args.verbose >= 1:
-            # reward_mean = clipped_rewards.mean()
-            print(f"Batch  Mean Clip Reward: {reward_mean} , Loss: {total_loss:.2f}")
-            
+            print(f"Step: {step} , Batch Mean Clip Reward: {reward_mean:.2f} , Loss: {total_loss:.6f}")
+        
         step += 1
 
         if torch.cuda.is_available():
@@ -296,11 +321,9 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
             device = torch.device("mps")
             model.to(device)
         
-        batch = []
-
+        batch.clear()
         if step >= total_steps:
             terminate_event.set()
-        
         # sync_ps.lock.release() 
         
     print("Exiting leraner process.")
