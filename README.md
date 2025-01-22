@@ -41,7 +41,6 @@ Implement IMPALA for CartPole-v1 of gym (or gymnasium) with the following requir
   
 - Submit your code and report together in the form of '.zip' file.
 - Your code and report is going to be used for the technical interview.
-- 제출기한 : October 23, 2024 로부터 **10 일** 후 자정까지 제출 
 
 
 
@@ -69,6 +68,9 @@ Implement IMPALA for CartPole-v1 of gym (or gymnasium) with the following requir
       sends       |--------------------------------------|
      weights
 ~~~
+
+- 참고 : [https://enfow.github.io/paper-review/reinforcement-learning/parallel-rl/2021/10/17/scalabel_distributed_deep_rl_with_importance_weighted_actor_learner/](https://enfow.github.io/paper-review/reinforcement-learning/parallel-rl/2021/10/17/scalabel_distributed_deep_rl_with_importance_weighted_actor_learner/)
+- 참고코드  : [https://github.com/facebookresearch/torchbeast/tree/main/torchbeast](https://github.com/facebookresearch/torchbeast/tree/main/torchbeast)
 
 Actor-Learner -> 폴리시의 gradient를 보내면던 A3C와 다르게 State를 전달함으로서, Policy-lag 에 효과적
 Optimisation -> 일반적인 RL은 Conv-net 특징점 / LSTM , Time dimensiont 을 Batch dimension
