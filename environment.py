@@ -139,7 +139,7 @@ class Atari:
             self.viewer.close()
             self.viewer = None
 
-# RL 과제를 위한 CartPole 게임환경
+# CartPole 게임환경
 class CartPole:
     def __init__(self, game_name, seed,max_episode_length=1e10, history_length=4, device='cpu'):
         self.device = device

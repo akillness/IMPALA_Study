@@ -44,14 +44,14 @@ from concurrent.futures import ThreadPoolExecutor
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--actors", type=int, default=4,
+    parser.add_argument("--actors", type=int, default=8,
                         help="the number of actors to start, default is 8")
     parser.add_argument("--seed", type=int, default=23,
                         help="the seed of random, default is 20")
     parser.add_argument("--game_name", type=str, default='breakout',#'CartPole-v1',
                         help="the name of atari game, default is CartPole-v1")
     parser.add_argument('--length', type=int, default=20,
-                        help='Number of Trajectories to get from the agent')
+                        help='Number of Trajectkories to get from the agent')
     parser.add_argument('--total_steps', type=int, default=80000000,
                         help='Number of steps to run the agent, default is 80000000')
     parser.add_argument('--batch_size', type=int, default=4,
@@ -90,6 +90,7 @@ if __name__ == '__main__':
     
     model = IMPALA(action_size=args.action_size)
     if os.path.exists(args.load_path):
+        model.cpu()
         model.state_dict(torch.load(args.load_path, map_location= torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"), weights_only=True))
         
     '''
@@ -144,7 +145,7 @@ if __name__ == '__main__':
     
     terminate_event = mp.Event()
     # optional : using 4-actor other process 
-    args.actors = 4
+    # args.actors = 4
 
     experience_queue = mp.Queue(maxsize=1)
     # model = IMPALA(action_size=args.action_size)
