@@ -49,10 +49,11 @@ class IMPALA(nn.Module):
         super(IMPALA, self).__init__()
         self.action_space = action_size
 
-        self.conv1 = nn.Conv2d(input_channels, 32, kernel_size=8, stride=4)
-        self.conv2 = nn.Conv2d(32, 64,kernel_size=4, stride=2)
-        self.conv3 = nn.Conv2d(64, 64,kernel_size=3, stride=1)
+        self.conv1 = nn.Conv2d(input_channels, 32, 8, stride=4, padding=1)
+        self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
+        self.conv3 = nn.Conv2d(64, 64, 3)
 
+        
         self.fc = nn.Linear(3136, hidden_size)
         # self.fc = nn.Linear(2304, hidden_size) <-- resdual conv 사용시
         # self.fc = nn.Linear(16,hidden_size)
@@ -64,8 +65,11 @@ class IMPALA(nn.Module):
         # self.core = nn.LSTM(core_output_size, core_output_size, 2)
         
         self.actor_critic = ActorCritic(self.core_output_size, action_size)
-
-    def forward(self, input_tensor, last_action, reward, done_flags, hidden_state=None, actor=False):
+    
+    def inital_state(self,batch_size=1):
+        return torch.zeros((2, batch_size, self.core_output_size), dtype=torch.float32)
+    
+    def forward(self, input_tensor, last_action, reward, done_flags, core_state=None, actor=False):
         # state 의 trajectory의 길이 단위별로 history 설정 및 batch size 만큼 차원변경
         # state 의 history-4 stack
 
@@ -77,7 +81,6 @@ class IMPALA(nn.Module):
         x = F.relu(self.conv1(x), inplace=True)
         x = F.relu(self.conv2(x), inplace=True)
         x = F.relu(self.conv3(x), inplace=True)
-
         # x = F.leaky_relu(self.conv1(x), inplace=True)
         # x = F.leaky_relu(self.conv2(x), inplace=True)
         # x = F.leaky_relu(self.conv3(x), inplace=True)
@@ -110,37 +113,24 @@ class IMPALA(nn.Module):
 
         # state 의 history-4 stack 에 대한 lstm feature를 actorcritic 에 state로 추가
         lstm_outputs = []
-        hidden_state = hidden_state.to(x.device)
-        init_core_state = torch.zeros((2, batch_size, self.core_output_size), dtype=torch.float32, device=x.device)
+        core_state = core_state.to(x.device)
+        init_core_state = self.inital_state(batch_size=batch_size).to(x.device)
         for state, d in zip(torch.unbind(x, 0), torch.unbind(done_flags, 0)):
-            hidden_state = torch.where(d.view(1, -1, 1), init_core_state, hidden_state)
-            hidden_state = self.lstm(state, hidden_state.unbind(0))
-            lstm_outputs.append(hidden_state[0])
-            hidden_state = torch.stack(hidden_state, 0)
+            core_state = torch.where(d.view(1, -1, 1), init_core_state, core_state)
+            core_state = self.lstm(state, core_state.unbind(0))
+            lstm_outputs.append(core_state[0])
+            core_state = torch.stack(core_state, 0)
         x = torch.cat(lstm_outputs, 0)
 
         # x = torch.cat(lstm_outputs, 0)
 
         logits, values = self.actor_critic(x)
         if not actor: # target to learner 
-            # 먼저 logits의 크기를 재조정합니다.
-            reshaped_logits = logits.view(seq_len, -1, batch_size)
-            
-            # dim=1에 대해 argmax를 수행하려면 logits의 차원 배치가 올바른지 확인합니다.
-            # 여기서는 seq_len, batch_size, -1로 차원을 변경합니다.
-            logits = reshaped_logits.permute(0, 2, 1)  # (seq_len, batch_size, -1)
-            predicted_indices = torch.argmax(logits, dim=2)  # dim=2에서 argmax 계산
-
-            return reshaped_logits, values.view(seq_len, batch_size)
+            return logits.view(seq_len, -1, batch_size), values.view(seq_len, batch_size)
         else: # target to actor
             action = torch.softmax(logits, 1).multinomial(1).item() # Case atari, Categorical
-            return action, logits.view(1, -1), hidden_state
+            return action, logits.view(1, -1), core_state
 
-        # if self.training:
-        #     action = torch.multinomial(F.softmax(policy_logits, dim=1), num_samples=1)
-        # else:
-        #     # Don't sample when testing.
-        #     action = torch.argmax(policy_logits, dim=1)
 
 class ActorCritic(nn.Module):
     def __init__(self, hidden_size, action_size):
