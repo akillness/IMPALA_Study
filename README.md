@@ -1,5 +1,4 @@
-# IMPALA_Cartpole
-RL 과제 구현 소스관리
+# IMPALA 모델 구현 및 Study 를 통해 게임환경에 IMPALA를 녹여보자
 
 # 설치 
 - Atari-py 설치
@@ -8,14 +7,14 @@ pip install atari-py
 ~~~
 
 - Rom설치
-링크 : [om_collection_archive_atari_2600_roms](https://www.atarimania.com/rom_collection_archive_atari_2600_roms.html)
+링크 : [Rom_collection_archive_atari_2600_roms](https://www.atarimania.com/rom_collection_archive_atari_2600_roms.html)
 
 위 링크에서 다운받은 파일 압축해제 후 ROM 폴더 경로 지정
 ~~~sh
 python -m atari_py.import_roms <path to folder>
 ~~~
 
-# RL과제
+# IMPALA 모델 구현 목표
 
 Implement IMPALA for CartPole-v1 of gym (or gymnasium) with the following requirements.
 
@@ -37,53 +36,48 @@ Implement IMPALA for CartPole-v1 of gym (or gymnasium) with the following requir
   2) The actor doesn't stop collecting data while the learner is updating parameters.
 
 - (Optional) If you tried to maximize the throughput of the system (number of data consumed by the system per second), please explain your method why it is beneficial for a higher throughput. You will have extra points for this.
-  
-  
-- Submit your code and report together in the form of '.zip' file.
-- Your code and report is going to be used for the technical interview.
 
 
-
-## 논문리뷰 ( 키워드 정리 )
-
-
-
+# 논문리뷰 ( 키워드 정리 )
 
 V-trace 알고리즘이 on-policy n-steps Bellman 업데이트로 축소되는 이유는 다음과 같습니다:
 
-### V-trace 알고리즘
+## V-trace 알고리즘
 V-trace는 off-policy 데이터를 사용하여 정책을 업데이트할 때 발생하는 편향을 줄이기 위해 설계된 알고리즘입니다. 이 알고리즘은 중요도 샘플링(importance sampling)을 사용하여 off-policy 데이터를 on-policy 데이터처럼 사용할 수 있게 합니다.
-### On-policy n-steps Bellman 업데이트
+
+## On-policy n-steps Bellman 업데이트
 On-policy n-steps Bellman 업데이트는 에이전트가 현재 정책을 사용하여 n 단계 동안 환경과 상호작용한 후, 그 결과를 바탕으로 가치 함수를 업데이트하는 방법입니다. 이 방법은 정책이 변경되지 않는다는 가정 하에 작동합니다.
-### V-trace가 on-policy n-steps Bellman 업데이트로 축소되는 이유
+
+## V-trace가 on-policy n-steps Bellman 업데이트로 축소되는 이유
 V-trace 알고리즘은 중요도 샘플링 비율(importance sampling ratio)
+~~~
 ρt =μ(at ∣st )/π(at ∣st )
+~~~
 를 사용하여 off-policy 데이터를 보정합니다. 여기서 π 는 목표 정책(target policy), μ는 행동 정책(behavior policy)입니다. 만약 목표 정책과 행동 정책이 동일하다면, 즉 π=μ라면, 중요도 샘플링 비율 ρt 는 1이 됩니다. 
 이 경우, V-trace 알고리즘은 다음과 같이 단순화됩니다:
-- V(xt )=rt +γV(xt+1 )
+~~~
+V(xt )=rt +γV(xt+1 )
+~~~
 
 
-
-[이 식은 on-policy n-steps Bellman 업데이트와 동일합니다1](https://ar5iv.labs.arxiv.org/html/1802.01561)[2](https://link.springer.com/article/10.1007/s10489-024-05508-9)~. 
+[이 식은 on-policy n-steps Bellman 업데이트와 동일합니다](https://ar5iv.labs.arxiv.org/html/1802.01561)[2](https://link.springer.com/article/10.1007/s10489-024-05508-9). 
 
 따라서, V-trace 알고리즘은 목표 정책과 행동 정책이 동일할 때 on-policy n-steps Bellman 업데이트로 축소됩니다.
 
 이러한 특성 덕분에 V-trace 알고리즘은 off-policy와 on-policy 데이터를 모두 효과적으로 사용할 수 있음
 
-'''
-그러나 절단 수준 ρ <¯ ∞를 선택하면, 우리의 고정점은 정책 πρ¯의 가치 함수 Vπρ¯가 되며, 이는 µ와 π 사이 어딘가에 위치합니다. ρ¯가 0에 가까워질 때, 우리는 행동 정책 Vµ의 가치 함수를 얻습니다. 부록 A에서는 관련된 V-trace 연산자의 수축과 해당 온라인 V-trace 알고리즘의 수렴을 증명합니다.
-
-가중치 ci는 Retrace에서의 "trace cutting" 계수와 유사합니다. 
-이들의 곱 cs . . . ct−1는 시간 t에서 관찰된 시간차 δtV가 이전 시간 s에서의 가치 함수 업데이트에 얼마나 영향을 미치는지를 측정합니다.
-π와 µ가 더 다를수록(즉, off-policy일수록) 이 곱의 분산이 커집니다. 
-우리는 분산 감소 기법으로 절단 수준 c¯를 사용합니다. 
-그러나 이 절단은 우리가 수렴하는 해(ρ¯로 특징지어짐)에 영향을 미치지 않습니다.
-따라서 절단 수준 c¯와 ρ¯는 알고리즘의 다른 특성을 나타냅니다:
- ρ¯는 우리가 수렴하는 가치 함수의 성격에 영향을 미치고, c¯는 우리가 이 함수에 수렴하는 속도에 영향을 미칩니다.
-'''
+> [!NOTICE]
+> 그러나 절단 수준 ρ <¯ ∞를 선택하면, 우리의 고정점은 정책 πρ¯의 가치 함수 Vπρ¯가 되며, 이는 µ와 π 사이 어딘가에 위치합니다. ρ¯가 0에 가까워질 때, 우리는 행동 정책 Vµ의 가치 함수를 얻습니다. 부록 A에서는 관련된 V-trace 연산자의 수축과 해당 온라인 V-trace 알고리즘의 수렴을 증명합니다.
+> 가중치 ci는 Retrace에서의 "trace cutting" 계수와 유사합니다.
+> 이들의 곱 cs . . . ct−1는 시간 t에서 관찰된 시간차 δtV가 이전 시간 s에서의 가치 함수 업데이트에 얼마나 영향을 미치는지를 측정합니다.
+> π와 µ가 더 다를수록(즉, off-policy일수록) 이 곱의 분산이 커집니다.
+> 우리는 분산 감소 기법으로 절단 수준 c¯를 사용합니다.
+> 그러나 이 절단은 우리가 수렴하는 해(ρ¯로 특징지어짐)에 영향을 미치지 않습니다.
+> 따라서 절단 수준 c¯와 ρ¯는 알고리즘의 다른 특성을 나타냅니다:
+> ρ¯는 우리가 수렴하는 가치 함수의 성격에 영향을 미치고, c¯는 우리가 이 함수에 수렴하는 속도에 영향을 미칩니다.
 
 
-## 개념정리
+# 개념정리 (도식화)
 IMPALA (Importance Weighted Actor-Learner Architectures)는 DeepMind에서 개발한 분산 심층 강화 학습 프레임워크입니다. 이 아키텍처는 대규모 데이터와 긴 학습 시간을 효율적으로 처리하기 위해 설계되었습니다. 다음은 IMPALA의 주요 개념과 구조에 대한 설명
 
 ~~~sh
