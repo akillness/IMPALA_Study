@@ -50,28 +50,41 @@ from torch.utils.tensorboard import SummaryWriter
 '''
 
 def transpose_batch_to_stack(batch):
-    obs = []
+    state = []
     actions = []
     rewards = []
     dones = []
     core_state = []
     logits = []
+
+    length = 0
+    batch_size= len(batch)
     for t in batch:
-        obs.append(t.obs)
+        state.append(t.state)
         rewards.append(t.rewards)
         dones.append(t.dones)
         actions.append(t.actions)
         logits.append(t.logit)
         core_state.append(t.lstm_core_state)
+        length = t.length
 
-    obs = torch.stack(obs).transpose(0, 1)
+
+    state = torch.stack(state).transpose(0, 1)
     actions = torch.stack(actions).transpose(0, 1)
     rewards = torch.stack(rewards).transpose(0, 1)
     dones = torch.stack(dones).transpose(0, 1)
-    logits = torch.stack(logits).permute(1, 2, 0)
-    # logits = torch.stack(logits).permute(0, 2, 1)
+    logits = torch.stack(logits).permute(1, 0, 2)
     core_state = torch.stack(core_state).transpose(0, 1)
-    return logits, obs, actions, rewards, dones, core_state
+
+    # state = torch.stack(state).view(length*batch_size,-1)
+    # actions = torch.stack(actions).view(length*batch_size,-1)
+    # rewards = torch.stack(rewards).view(length*batch_size,-1)
+    # dones = torch.stack(dones).view(length*batch_size,-1)
+    # logits = torch.stack(logits).view(length*batch_size,-1)
+    # core_state = torch.stack(core_state).transpose(0, 1)
+    
+
+    return logits, state, actions, rewards, dones, core_state
 
 def compute_baseline_loss(advantages):
     return 0.5 * torch.sum(advantages ** 2)
@@ -80,21 +93,16 @@ def compute_entropy_loss(logits):
     """Return the entropy loss, i.e., the negative entropy of the policy."""
     policy = F.softmax(logits, dim=-1)
     log_policy = F.log_softmax(logits, dim=-1)
-    return torch.sum(policy * log_policy)
+    return -torch.sum(-policy * log_policy)
 
 def compute_policy_gradient_loss(logits, actions, advantages):
-    
-    # cross_entropy = F.cross_entropy(logits, actions, reduction='none') # sparse_softmax_cross_entropy_with_logits
-    # policy_gradient_loss_per_timestep = cross_entropy * advantages.detach() 
-    # return torch.sum(policy_gradient_loss_per_timestep)
-
-    cross_entropy = F.nll_loss(
-        F.log_softmax(torch.flatten(logits, 0, 1), dim=-1),
-        target=torch.flatten(actions, 0, 1),
-        reduction="none",
-    )
-    cross_entropy = cross_entropy.view_as(advantages)
-    return torch.sum(cross_entropy * advantages.detach())
+    cross_entropy = F.cross_entropy(logits, actions, reduction='none')# sparse_softmax_cross_entropy_with_logits
+    policy_gradient_loss_per_timestep = cross_entropy * advantages.detach() 
+    return -torch.sum(policy_gradient_loss_per_timestep)
+    # cross_entropy = F.nll_loss(
+    #     F.log_softmax(logits, dim=-1), target=torch.flatten(actions), reduction="none",
+    # ).view_as(advantages)
+    # return torch.sum(cross_entropy * advantages.detach())
     
 def learner(model, experience_queue, sync_ps, args, terminate_event):
     """Learner to get parameters from IMPALA"""
@@ -102,51 +110,53 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
     batch_size = args.batch_size
     baseline_cost = args.baseline_cost
     entropy_cost = args.entropy_cost
-    gamma = args.gamma
+    discount_gamma = args.gamma
     save_path = args.save_path
     total_steps = args.total_steps
 
-    optimizer = optim.Adam(model.parameters(), lr=args.lr, eps=args.epsilon,
-                       weight_decay=args.decay)
+    # optimizer = optim.Adam(model.parameters(), lr=args.lr, eps=args.epsilon,
+    #                    weight_decay=args.decay)
 
-    # optimizer = torch.optim.RMSprop(
-    #     model.parameters(),
-    #     lr=args.lr,
-    #     momentum=args.momentum,
-    #     eps=args.epsilon,
-    #     alpha=args.decay,
-    # )
+    optimizer = torch.optim.RMSprop(
+        model.parameters(),
+        lr=args.lr,
+        momentum=args.momentum,
+        eps=args.epsilon,
+        alpha=args.decay,
+    )
 
     lr_lambda = lambda epoch : 1 - min(epoch * args.length * args.batch_size, args.total_steps) / args.total_steps
     scheduler = LambdaLR(optimizer,lr_lambda)
     
     # scheduler = PolynomialLR(optimizer, total_iters=args.total_steps, power=1.0)
-    
+    '''
     # Load state from a checkpoint, if possible.
-    if os.path.exists(save_path):
+    if os.path.exists(save_path):        
         checkpoint_states = torch.load(
             save_path, map_location= torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"), weights_only=True
         )
-        # model.load_state_dict(checkpoint_states)
-        model.load_state_dict(checkpoint_states["model_state_dict"])
-        optimizer.load_state_dict(checkpoint_states["optimizer_state_dict"])
-        scheduler.load_state_dict(checkpoint_states["scheduler_state_dict"])
-        
+        model.cpu()
+        model.load_state_dict(checkpoint_states)
+        # model.load_state_dict(checkpoint_states["model_state_dict"])
+        # optimizer.load_state_dict(checkpoint_states["optimizer_state_dict"])
+        # scheduler.load_state_dict(checkpoint_states["scheduler_state_dict"])
+    '''
 
     # TensorBoard SummaryWriter 초기화
     writer = SummaryWriter(log_dir=args.log_dir)
     
     batch = []
-    best = 0.
     step = 0
+    best = 0
     
     while not terminate_event.is_set():
             
         """Gets trajectory from experience of actors and trains learner."""
         
-        total_loss = 0.0 
+        loss = 0.0 
+        value_loss = 0.0 
         policy_loss = 0.0 
-        entropy_loss = 0.0
+        policy_entropy = 0.0
 
         reward = 0.0
         reward_mean = 0.0 
@@ -157,7 +167,6 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         trajectory = experience_queue.get()
         
         # print(f"rewards : {trajectory.rewards.sum()}")
-        # batch.clear()
         batch.append(trajectory)
         if torch.cuda.is_available():
             trajectory.cuda()
@@ -172,49 +181,54 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
 
         # sync_ps.lock.acquire()  # Only one thread learning at a time.
 
-        behavior_logits, obs, actions, rewards, dones, core_state = transpose_batch_to_stack(batch)
+        behavior_logits, state, actions, rewards, dones, core_state = transpose_batch_to_stack(batch)
         # print(f"rewards : {rewards.sum().item()}")
         batch_time = time.time() - start_batch_time
-
+        
+        # print(f"Trajectories : {len(state)}")
         if args.reward_clip == "abs_one":
             clipped_rewards = torch.clamp(rewards, -1, 1)
         elif args.reward_clip == 'soft_asymmetric':
             squeezed = torch.tanh(rewards / 5.0)
             # Negative rewards are given less weight than positive rewards.
             clipped_rewards = torch.where(rewards < 0, 0.3 * squeezed, squeezed) * 5.0
-        elif args.reward_clip == "none":
+        else:
             clipped_rewards = rewards
         
         # check forward time 
         start_forward_time = time.time()
-        logits, values = model(obs, actions, rewards, dones, core_state=core_state)
-        forward_time = time.time() - start_forward_time
-
+        reshape, target_logits, target_values = model(state, actions, clipped_rewards, dones, core_state=core_state)
         
-        actions, behavior_logits, dones, clipped_rewards = actions[1:], behavior_logits[1:], dones[1:], clipped_rewards[1:]
+        '''
+        # reshape for vtrace
+        '''
+        behavior_logits = behavior_logits.reshape(reshape[0]*reshape[1],reshape[2])
+        actions = reshape[3].squeeze()
+        clipped_rewards = reshape[4]
+        dones = reshape[5]
+        
+        forward_time = time.time() - start_forward_time        
+        actions, behavior_logits, dones, rewards = actions[1:], behavior_logits[1:], dones[1:], clipped_rewards[1:]
+        bootstrap_value = target_values[-1]
+        target_logits, target_values = target_logits[:-1], target_values[:-1]
 
-        bootstrap_value = values[-1]
-        logits, values = logits[:-1], values[:-1]
-
-        # bootstrap_value = logits['baseline'][-1]
-        # logits, values = logits['policy_logits'][:-1], logits['baseline'][:-1]
-
-        discounts = (~dones).float() * gamma
+        discounts = (~dones).float() * discount_gamma
         
         # 행동 정책과 목표 정책의 로그 확률 계산
         # 선택된 행동의 로그 확률 추출
-        target_action_log_probs = vtrace.action_log_probs(logits, actions)
+        target_action_log_probs = vtrace.action_log_probs(target_logits, actions)
         behavior_action_log_probs = vtrace.action_log_probs(behavior_logits, actions)
-
+        
+        
         # 로그 중요도 샘플링 비율 계산
         log_rhos = target_action_log_probs - behavior_action_log_probs
         # compute value estimates and logits for observed states
-        # compute log probs for current and old policies
-        vs, pg_advantages = vtrace.from_importance_weights(
+        # compute log probs for current and old policies # Importance sampling ratio 기록
+        vs, pg_advantages, importance_sampling_ratios = vtrace.from_importance_weights( 
             log_rhos=log_rhos,
             discounts=discounts,
-            rewards=clipped_rewards,
-            values=values,
+            rewards=rewards,
+            values=target_values,
             bootstrap_value=bootstrap_value,
         )
 
@@ -227,23 +241,25 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         #     values=values,
         #     bootstrap_value=bootstrap_value)
         
-        # policy gradient loss
-        pg_loss = compute_policy_gradient_loss(logits,actions,pg_advantages)
+        # batch_size
 
         # baseline_loss, Weighted MSELoss
-        critic_loss = baseline_cost * compute_baseline_loss(vs-values)
+        critic_loss = baseline_cost * compute_baseline_loss(vs-target_values)
+
+        # policy gradient loss
+        pg_loss = compute_policy_gradient_loss(target_logits,actions,pg_advantages)
 
         # entropy_loss
-        entropy_loss = entropy_cost * compute_entropy_loss(logits)
-        
+        entropy_loss = entropy_cost * compute_entropy_loss(target_logits)
+
         # total loss 
-        total_loss = pg_loss + critic_loss + entropy_loss
+        loss = (pg_loss + critic_loss + entropy_loss)
 
         # Update Optimizaer
         optimizer.zero_grad()
         # check backward time
         start_backward_time = time.time()
-        total_loss.backward()
+        loss.backward()
         # loss.backward()
         backward_time = time.time() - start_backward_time
 
@@ -256,36 +272,34 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         optimizer.step()
         # schedualer update
         scheduler.step()
-        
+
+        # Tensorboard 용 
+        loss += loss.item() / batch_size
+        value_loss += critic_loss.item() / batch_size
+        policy_loss += pg_loss.item() / batch_size
+        policy_entropy += entropy_loss.item() / batch_size
+
+        reward_mean += rewards.mean().item() / batch_size
+        reward += rewards.sum().item() / batch_size
+
         # Save the trained model
         model.cpu()
         sync_ps.push(model.state_dict())        
-        if clipped_rewards.mean().item() > best:
-            # torch.save(model.state_dict(), save_path)
-            torch.save(
-            {"model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "scheduler_state_dict": scheduler.state_dict()}
-            ,save_path)
-            # best update
-            best = clipped_rewards.mean().item()
+        if reward > best:
+            torch.save(model.state_dict(), save_path)
+            # torch.save(
+            # {"model_state_dict": model.state_dict(),
+            # "optimizer_state_dict": optimizer.state_dict(),
+            # "scheduler_state_dict": scheduler.state_dict()}
+            # ,save_path)
+            best = reward
 
-        # Tensorboard 용 
-        total_loss += total_loss.item()
-        policy_loss += critic_loss.item()
-        entropy_loss += entropy_loss.item()
-
-        reward_mean += rewards.mean().item()
-        reward += rewards.sum().item()
-
-        # Importance sampling ratio 기록
-        importance_sampling_ratios = torch.exp(log_rhos)
-        
         # TensorBoard에 손실 및 보상 기록
         writer.add_scalars('Loss',{
-            'total': total_loss,
-            'critic': policy_loss,
-            'entropy': entropy_loss,
+            'total': loss,
+            'critic': value_loss,
+            'policy': policy_loss,
+            'entropy': policy_entropy,
         }, step)
 
         writer.add_histogram('Action',actions,step)
@@ -300,7 +314,7 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         writer.add_scalars('Importance_sampling_ratio', {
             'min': importance_sampling_ratios.min().item(),
             'max': importance_sampling_ratios.max().item(),
-            'avg': importance_sampling_ratios.mean().item()
+            'mean': importance_sampling_ratios.mean().item()
         }, step)
         
         writer.add_scalars('Time', {
@@ -309,9 +323,9 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
             'backward': backward_time
         }, step)
         
-        # log to console
+        #log to console
         if args.verbose >= 1:
-            print(f"Step: {step} , Batch Mean Clip Reward: {reward_mean:.2f} , Loss: {total_loss:.6f}")
+            print(f"Step: {step} , Batch Mean Clip Reward: {reward_mean:.2f} , Loss: {loss:.6f}")
         
         step += 1
 

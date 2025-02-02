@@ -14,8 +14,8 @@ import torch.multiprocessing as mp
 
 
 # # 호환성을 위한 bool8 정의
-# if not hasattr(np, "bool8"):
-#     np.bool8 = np.bool_
+if not hasattr(np, "bool8"):
+    np.bool8 = np.bool_
 
 def get_action_size(env_class, env_args):
     env = env_class(**env_args)
@@ -139,14 +139,20 @@ class Atari:
             self.viewer.close()
             self.viewer = None
 
+""" 구현해야 할 부분 """
+# AutoQA Tool
+class AUTOQA:
+    def _init__(self):
+        pass
+
 # CartPole 게임환경
 class CartPole:
-    def __init__(self, game_name, seed,max_episode_length=1e10, history_length=4, device='cpu'):
+    def __init__(self, game_name, seed, history_length=1, device='cpu'):
         self.device = device
         self.env = gym.make(game_name)
         self.env.reset(seed=seed)
         np.random.seed(seed)
-        self.env._max_episode_steps = max_episode_length
+        # self.env._max_episode_steps = self.env._max_episode_steps
         
         self.actions = self.env.action_space.n 
         self.history_length = history_length
@@ -171,8 +177,8 @@ class CartPole:
         state, reward, done, _, info = self.env.step(action)
         observation = torch.tensor(state,dtype=torch.float32, device=self.device)
         self.state_buffer.append(observation)
-        # print(f"state : {action}, reward : {reward}")        
-        # Return state, reward, done
+        # print(f"state : {action}, reward : {reward}") 
+        
         return torch.stack(list(self.state_buffer), 0), reward, done
     
     def train(self):

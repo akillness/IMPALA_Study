@@ -32,6 +32,8 @@ import collections
 import torch
 import torch.nn.functional as F
 
+from torch import nn
+
 VTraceFromLogitsReturns = collections.namedtuple(
     "VTraceFromLogitsReturns",
     [
@@ -43,14 +45,14 @@ VTraceFromLogitsReturns = collections.namedtuple(
     ],
 )
 
-VTraceReturns = collections.namedtuple("VTraceReturns", "vs pg_advantages")
+VTraceReturns = collections.namedtuple("VTraceReturns", "vs pg_advantages clipped_rhos")
 
 def action_log_probs(policy_logits, actions):
-    return -F.nll_loss(
-        F.log_softmax(torch.flatten(policy_logits, 0, -2), dim=-1),
-        torch.flatten(actions),
-        reduction="none",
-    ).view_as(actions)
+    # Cross-Entropy 손실을 계산하고 부호를 반전하여 로그 확률을 얻습니다.
+    return -F.cross_entropy (policy_logits, actions, reduction="none")
+    '''loss = nn.CrossEntropyLoss(reduce=False)
+    output = loss(policy_logits, actions)
+    return -output'''
 
 
 def from_logits(
@@ -90,7 +92,6 @@ def from_logits(
     #     target_action_log_probs=target_action_log_probs,
     # )
 
-
 @torch.no_grad()
 def from_importance_weights(
     log_rhos,
@@ -110,12 +111,14 @@ def from_importance_weights(
             clipped_rhos = rhos
 
         cs = torch.clamp(rhos, max=1.0)
+        # cs = torch.min(torch.ones_like(rhos), rhos)
         # Append bootstrapped value to get [v1, ..., v_t+1]
         values_t_plus_1 = torch.cat(
             [values[1:], torch.unsqueeze(bootstrap_value, 0)], dim=0
         )
+        
         deltas = clipped_rhos * (rewards + discounts * values_t_plus_1 - values)
-
+        
         acc = torch.zeros_like(bootstrap_value)
         result = []
         for t in range(discounts.shape[0] - 1, -1, -1):
@@ -123,10 +126,9 @@ def from_importance_weights(
             result.append(acc)
         result.reverse()
         vs_minus_v_xs = torch.stack(result)
-
         # Add V(x_s) to get v_s.
         vs = torch.add(vs_minus_v_xs, values)
-
+        
         # Advantage for policy gradient.
         broadcasted_bootstrap_values = torch.ones_like(vs[0]) * bootstrap_value
         vs_t_plus_1 = torch.cat(
@@ -136,7 +138,9 @@ def from_importance_weights(
             clipped_pg_rhos = torch.clamp(rhos, max=clip_pg_rho_threshold)
         else:
             clipped_pg_rhos = rhos
-        pg_advantages = clipped_pg_rhos * (rewards + discounts * vs_t_plus_1 - values)
 
+        pg_advantages = clipped_pg_rhos * (rewards + discounts * vs_t_plus_1 - values)
+        
         # Make sure no gradients backpropagated through the returned values.
-        return VTraceReturns(vs=vs, pg_advantages=pg_advantages)
+        return VTraceReturns(vs=vs.detach(), pg_advantages=pg_advantages.detach(), clipped_rhos=clipped_rhos)
+    

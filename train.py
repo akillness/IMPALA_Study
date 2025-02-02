@@ -4,9 +4,12 @@ import argparse
 import torch 
 
 from proxy import *
-from environment import Atari,get_action_size
+from environment import Atari,CartPole,get_action_size
 
-from model import IMPALA
+# from model import IMPALA
+
+from impala import IMPALA
+
 from actor import actor
 from learner import learner
 
@@ -74,9 +77,11 @@ if __name__ == '__main__':
                         help="RMSProp gradient norm, default is 40")
     parser.add_argument("--verbose", type=int, default=1,
                         help="RMSProp print log flag, default is 0")
-    parser.add_argument('--save_path', type=str, default="./model/checkpoint.pt",
+    parser.add_argument('--save_path', type=str, default="./model/impala.pt",
                         help='Set the path to save trained model parameters')
-    parser.add_argument('--load_path', type=str, default="./model/checkpoint.pt",
+    parser.add_argument('--save_interval', type=int, default=10000,
+                        help='Set interval to save trained model parameters')
+    parser.add_argument('--load_path', type=str, default="./model/impala.pt",
                         help='Set the path to load trained model parameters')
     parser.add_argument('--log_dir', type=str, default="./runs/",
                         help='Set the path to check learning state using tensorboard')    
@@ -84,8 +89,11 @@ if __name__ == '__main__':
                         help='Set clipping reward type, default is "abs_one" (soft_asymmetric,abs_one,no_clip)')
     
     args = parser.parse_args()
+    args.game_name = 'CartPole-v1'
+    
     env_args = {'game_name': args.game_name, 'seed': args.seed}
-    action_size = get_action_size(Atari, env_args)
+    # action_size = get_action_size(Atari, env_args)
+    action_size = get_action_size(CartPole, env_args)
     args.action_size = action_size    
     
     model = IMPALA(action_size=args.action_size)
@@ -162,18 +170,17 @@ if __name__ == '__main__':
     learner = mp.Process(target=learner, args=(model, experience_queue,sync_ps, args, terminate_event))
     
     # actors of multi-process pool
-    # actors = [mp.Process(target=actor, args=(idx, experience_queue, sync_ps, envs[idx], args, terminate_event))
-    actors = [mp.Process(target=actor, args=(idx, experience_queue, sync_ps, args, terminate_event))
-              for idx in range(args.actors)]
+    # actors = [mp.Process(target=actor, args=(idx, experience_queue, sync_ps, args, terminate_event))
+    #           for idx in range(args.actors)]
     
     # synchronous learning and actors
     learner.start()
     
-    [actor.start() for actor in actors]
-    [actor.join() for actor in actors]
-    
-    # idx = 0
-    # actor(idx, experience_queue, sync_ps, args, terminate_event)
+    # [actor.start() for actor in actors]
+    # [actor.join() for actor in actors]
+        
+    idx = 0
+    actor(idx, experience_queue, sync_ps, args, terminate_event)
 
     learner.join()
     # main 프로세스 종료

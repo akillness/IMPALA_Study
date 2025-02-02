@@ -9,13 +9,14 @@ class SyncParameters(object):
         self.weight = None
 
     def pull(self):
-        # with self.lock:
-        #     return self.weight
-        return self.weight
-
-    def push(self, weigth):
         with self.lock:
-            self.weight = weigth
+            return self.weight
+        # return self.weight
+
+    def push(self, weight):
+        with self.lock:
+            # print(f'{self.weight}')
+            self.weight = weight
     
 
 class EnvThread(object):
