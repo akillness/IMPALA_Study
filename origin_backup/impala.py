@@ -49,32 +49,33 @@ class IMPALA(nn.Module):
         logits, value = self.head(x)           
         return self.head(x), core_state
 
-    def get_policy_and_action(self, state):
+    def get_policy_and_action(self, state, core_state):
         x = F.relu(self.fc(state))
-        # x = self.fc(state)
-        logits, value = self.head(x)
-  
+        logits, value = self.head(x)        
         dist = torch.distributions.Categorical(logits=logits)
         action = dist.sample().item()
-        return action, logits.view(1, -1)
-
-    def get_policy(self,state):
-        # x = self.fc(state)
-        x = F.relu(self.fc(state))
-        logits, value = self.head(x)
-        return logits, value
+        return action, logits.view(1, -1), core_state
 
     def forward(self, state, last_action, reward, done_flags, core_state=None, actor=False):
         # state 의 trajectory의 길이 단위별로 history 설정 및 batch size 만큼 차원변경
         seq_len, batch_size, x, last_actions, rewards, dones = reshape_stacked_state_dim(state, last_action, reward, done_flags, actor)
-        
-        x = self.fc(x)
-        # x = F.relu(self.fc(x))
+        # last_action = torch.zeros(last_action.shape[0], self.action_space,
+        #                           dtype=torch.float32, device=state.device).scatter_(1, last_action, 1)
+
+        # x = x.view(x.shape[0], -1)
+        x = F.relu(self.fc(x))
+
+        # clipped_rewards = torch.clamp(reward, -1, 1)            
+        # x = torch.cat((x, clipped_rewards, last_action), dim=1)
+
         x = x.view(seq_len, batch_size, -1)
 
         logits, values = self.head(x)      
         # (logits, values), hidden_state= self.unroll(x, batch_size,done_flags,core_state)
-        
+        # x = x.view(seq_len, batch_size, -1)
+        # x = F.relu(self.fc(x))
+        '''logits, values = self.actor_critic(x)'''
+
         # return logits.view(seq_len, -1), values.view(seq_len, -1)
         return (seq_len, batch_size, self.action_space, last_actions, rewards, dones),logits.view(seq_len * batch_size, self.action_space), values.view(seq_len * batch_size)
         

@@ -51,7 +51,7 @@ for episode in range(5):  # 1개의 에피소드 실행
 
         state= torch.FloatTensor(state).unsqueeze(0).to(device)
         # policy_dist, _ = model(state)
-        action, logits = model.get_policy_and_action(state)
+        action, logits, core_state = model.get_policy_and_action(state,core_state)
         action = torch.argmax(logits, dim=-1).item()  # 가장 높은 확률의 행동 선택
 
         next_state, reward, done, _, _ = env.step(action)
