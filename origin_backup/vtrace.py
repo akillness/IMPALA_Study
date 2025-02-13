@@ -126,7 +126,6 @@ def from_importance_weights(
             result.append(acc)
         result.reverse()
         vs_minus_v_xs = torch.stack(result)
-        
         # Add V(x_s) to get v_s.
         vs = torch.add(vs_minus_v_xs, values)
         

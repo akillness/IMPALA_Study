@@ -13,6 +13,17 @@ pip install atari-py
 ~~~sh
 python -m atari_py.import_roms <path to folder>
 ~~~
+# 결과
+
+
+Tensorboard
+<img src="./imgs/tensorboard.png">
+
+Result
+<img src="./imgs/trained.gif">
+
+
+
 
 # IMPALA 모델 구현 목표
 

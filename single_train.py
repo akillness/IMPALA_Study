@@ -10,10 +10,11 @@ from environment import Atari,CartPole,get_action_size
 
 from impala import IMPALA
 
-from actor import actor
+from single_agent import actor
 from learner import learner
 
-import threading, os
+import torch.multiprocessing as mp
+
 # import threading, queue
 from concurrent.futures import ThreadPoolExecutor
 
@@ -53,7 +54,7 @@ if __name__ == '__main__':
                         help="the seed of random, default is 20")
     parser.add_argument("--game_name", type=str, default='breakout',#'CartPole-v1',
                         help="the name of atari game, default is CartPole-v1")
-    parser.add_argument('--length', type=int, default=20,
+    parser.add_argument('--length', type=int, default=256,
                         help='Number of Trajectkories to get from the agent')
     parser.add_argument('--total_steps', type=int, default=80000000,
                         help='Number of steps to run the agent, default is 80000000')
@@ -96,93 +97,39 @@ if __name__ == '__main__':
     action_size = get_action_size(CartPole, env_args)
     args.action_size = action_size    
     
-    model = IMPALA(action_size=args.action_size)
-    if os.path.exists(args.load_path):
-        model.cpu()
-        model.state_dict(torch.load(args.load_path, map_location= torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"), weights_only=True))
-        
-    '''
-    # Standard single-process
-    '''
-    
-    """
-    terminate_event = threading.Event()
-    # env_name = 'CartPole-v1'   
-    experience_queue = queue.Queue()
-    
-    envs = [EnvThread(CartPole, env_args)
-            for idx in range(args.actors)]
-    
-    # model = IMPALA(action_size=args.action_size)
-    
-    lock = threading.Lock()    
-    sync_ps = SyncParameters(lock)L,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,.
-    sync_ps.push(model.state_dict())
-    
-    
-    idx  = 0
-    actor = threading.Thread(target=actor, args=(idx, experience_queue, sync_ps, envs[idx], args, terminate_event))
-    learner = threading.Thread(target=learner, args=(model, experience_queue, sync_ps, args, terminate_event))
-
-    learner.start()
-    actor.start()
-    actor.join()
-    learner.join()
-
-    # # max workers : actors + learner
-    # with ThreadPoolExecutor(max_workers=args.actors + 1) as executor:
-    #     # actors
-    #     thread_pool = [executor.submit(actor, idx, experience_queue, sync_ps, envs[idx], args) for idx in range(args.actors)]
-    #     # learner
-    #     thread_pool.append(executor.submit(learner, model, experience_queue, sync_ps, args))
-        
-    #     # synchronous learning and actors
-    #     for thread in thread_pool:
-    #         thread.result()
-
-    """
+    learner_model = IMPALA(action_size=args.action_size)
 
     # Optional Section
-
-    from proxy import EnvProcess
-    from environment import Atari, get_action_size
-
-    import torch.multiprocessing as mp
 
     mp.set_start_method('spawn')
     
     terminate_event = mp.Event()
     # optional : using 4-actor other process 
-    # args.actors = 4
-
     experience_queue = mp.Queue(maxsize=1)
-    # model = IMPALA(action_size=args.action_size)
 
+    # sync for trajectories
     lock = mp.Lock()
     sync_ps = SyncParameters(lock)
-    sync_ps.push(model.state_dict())
+    sync_ps.push(learner_model.state_dict())
     
-    # environments of multi-process paired actors
-    # envs = [EnvProcess(Atari, env_args)
-    #         for idx in range(args.actors)]
+    idx = 0
+    actor(idx, experience_queue=experience_queue,learner_model=learner_model, sync_ps=sync_ps, args=args, terminate_event=terminate_event)
 
     # learner
-    learner = mp.Process(target=learner, args=(model, experience_queue,sync_ps, args, terminate_event))
+    # learner = mp.Process(target=learner, args=(learner_model, experience_queue, sync_ps, args, terminate_event))
     
     # actors of multi-process pool
-    actors = [mp.Process(target=actor, args=(idx, experience_queue, sync_ps, args, terminate_event))
-              for idx in range(args.actors)]
+    # actors = [mp.Process(target=actor, args=(idx, experience_queue, sync_ps, args, terminate_event))
+    #           for idx in range(args.actors)]
     
     # synchronous learning and actors
-    learner.start()
+    # learner.start()
     
-    [actor.start() for actor in actors]
-    [actor.join() for actor in actors]
+    # [actor.start() for actor in actors]
+    # [actor.join() for actor in actors]
         
-    # idx = 0
-    # actor(idx, experience_queue, sync_ps, args, terminate_event)
+    # learner.join()
 
-    learner.join()
     # main 프로세스 종료
     print("All processes have been terminated. Exiting main process.")
     # """

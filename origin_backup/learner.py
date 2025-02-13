@@ -54,7 +54,7 @@ def transpose_batch_to_stack(batch):
     actions = []
     rewards = []
     dones = []
-    #core_state = []
+    core_state = []
     logits = []
 
     length = 0
@@ -65,7 +65,7 @@ def transpose_batch_to_stack(batch):
         dones.append(t.dones)
         actions.append(t.actions)
         logits.append(t.logit)
-        # core_state.append(t.lstm_core_state)
+        core_state.append(t.lstm_core_state)
         length = t.length
 
 
@@ -74,7 +74,7 @@ def transpose_batch_to_stack(batch):
     rewards = torch.stack(rewards).transpose(0, 1)
     dones = torch.stack(dones).transpose(0, 1)
     logits = torch.stack(logits).permute(1, 0, 2)
-    # core_state = torch.stack(core_state).transpose(0, 1)
+    core_state = torch.stack(core_state).transpose(0, 1)
 
     # state = torch.stack(state).view(length*batch_size,-1)
     # actions = torch.stack(actions).view(length*batch_size,-1)
@@ -84,7 +84,7 @@ def transpose_batch_to_stack(batch):
     # core_state = torch.stack(core_state).transpose(0, 1)
     
 
-    return logits, state, actions, rewards, dones #, core_state
+    return logits, state, actions, rewards, dones, core_state
 
 def compute_baseline_loss(advantages):
     return 0.5 * torch.sum(advantages ** 2)
@@ -129,6 +129,18 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
     scheduler = LambdaLR(optimizer,lr_lambda)
     
     # scheduler = PolynomialLR(optimizer, total_iters=args.total_steps, power=1.0)
+    '''
+    # Load state from a checkpoint, if possible.
+    if os.path.exists(save_path):        
+        checkpoint_states = torch.load(
+            save_path, map_location= torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"), weights_only=True
+        )
+        model.cpu()
+        model.load_state_dict(checkpoint_states)
+        # model.load_state_dict(checkpoint_states["model_state_dict"])
+        # optimizer.load_state_dict(checkpoint_states["optimizer_state_dict"])
+        # scheduler.load_state_dict(checkpoint_states["scheduler_state_dict"])
+    '''
 
     # TensorBoard SummaryWriter 초기화
     writer = SummaryWriter(log_dir=args.log_dir)
@@ -169,7 +181,7 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
 
         # sync_ps.lock.acquire()  # Only one thread learning at a time.
 
-        behavior_logits, state, actions, rewards, dones = transpose_batch_to_stack(batch)
+        behavior_logits, state, actions, rewards, dones, core_state = transpose_batch_to_stack(batch)
         # print(f"rewards : {rewards.sum().item()}")
         batch_time = time.time() - start_batch_time
         
@@ -185,7 +197,7 @@ def learner(model, experience_queue, sync_ps, args, terminate_event):
         
         # check forward time 
         start_forward_time = time.time()
-        reshape, target_logits, target_values = model(state, actions, clipped_rewards, dones)
+        reshape, target_logits, target_values = model(state, actions, clipped_rewards, dones, core_state=core_state)
         
         '''
         # reshape for vtrace
