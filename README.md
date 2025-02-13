@@ -16,11 +16,12 @@ python -m atari_py.import_roms <path to folder>
 ~~~
 # 결과
 
-[Tensorboard]
-![Tensorboard]<img src="./imgs/tensorboard.png">
 
-[Result]
-![result]<img src="./imgs/trained.gif">
+Tensorboard
+<img src="./imgs/tensorboard.png">
+
+Result
+<img src="./imgs/trained.gif">
 
 
 
