@@ -18,9 +18,11 @@ python -m atari_py.import_roms <path to folder>
 
 
 Tensorboard
+
 <img src="./imgs/tensorboard.png">
 
 Result
+
 <img src="./imgs/trained.gif">
 
 
