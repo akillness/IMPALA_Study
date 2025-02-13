@@ -14,6 +14,16 @@ pip install atari-py
 ~~~sh
 python -m atari_py.import_roms <path to folder>
 ~~~
+# 결과
+
+[Tensorboard]
+![Tensorboard]<img src="./imgs/tensorboard.png">
+
+[Result]
+![result]<img src="./imgs/trained.gif">
+
+
+
 
 # RL과제
 

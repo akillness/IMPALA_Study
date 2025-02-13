@@ -48,10 +48,6 @@ def compute_entropy_loss(logits):
 def compute_policy_gradient_loss(logits, actions, advantages):
     cross_entropy = F.cross_entropy(logits, actions, reduction='none')# sparse_softmax_cross_entropy_with_logits
     return -torch.sum(cross_entropy * advantages.detach())
-    # cross_entropy = F.nll_loss(
-    #     F.log_softmax(logits, dim=-1), target=torch.flatten(actions), reduction="none",
-    # ).view_as(advantages)
-    # return torch.sum(cross_entropy * advantages.detach())
 
 class Trajectory(object):
     """class to store trajectory data."""
@@ -217,10 +213,7 @@ def actor(idx, experience_queue, learner_model,  sync_ps, args, terminate_event)
                     total_reward = 0.
                     break
 
-                    # print(f'{experience_queue._buffer}, {rollout.length}')
-
                 action, logits = actor_model.get_policy_and_action(obs)
-                        
                 obs, reward, is_done = env.step(action)
         
                 # total_reward += reward
