@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 """Actor to generate trajactories"""
 
-import torch
+import torch, os
 import numpy as np
 from model import Network
 
@@ -26,26 +26,26 @@ class Trajectory(object):
         self.actions = []
         self.rewards = []
         self.dones = []
-        self.logit = []
+        self.logits = []
         self.last_actions = []
         self.actor_id = None
         # self.lstm_hx = None
         
         self.max_size = max_size
         self.position = 0
-
+          
     def append(self, state, action, reward, done, logit):
         if len(self.rewards) < self.max_size+1:
             self.obs.append(None)
             self.actions.append(None)
             self.rewards.append(None)
-            self.logit.append(None)
+            self.logits.append(None)
             self.dones.append(None)
         
         self.obs[self.position] = state
         self.actions[self.position] = action
         self.rewards[self.position] = reward
-        self.logit[self.position] = logit
+        self.logits[self.position] = logit
         self.dones[self.position] = done
         
         self.position = (self.position + 1) % self.max_size
@@ -68,8 +68,8 @@ class Trajectory(object):
         self.rewards = torch.stack(self.rewards).squeeze()
         self.actions = torch.stack(self.actions).squeeze()
         self.dones = torch.stack(self.dones).squeeze()
-        self.logit = torch.stack(self.logit)
-        # return step_reward
+        self.logits = torch.stack(self.logits)
+        
         
 
     def cuda(self):        
@@ -78,7 +78,7 @@ class Trajectory(object):
         self.dones = self.dones.cuda()
         # self.lstm_hx = self.lstm_hx.cuda()
         self.rewards = self.rewards.cuda()
-        self.logit = self.logit.cuda()
+        self.logits = self.logits.cuda()
 
     def mps(self):
         device = torch.device("mps")
@@ -87,12 +87,12 @@ class Trajectory(object):
         self.dones = self.dones.to(device)
         # self.lstm_hx = self.lstm_hx.to(device)
         self.rewards = self.rewards.to(device)
-        self.logit = self.logit.to(device)
+        self.logits = self.logits.to(device)
         
     def get_last(self):
         """must call this function before finish()"""
         obs = self.obs[-1]
-        logits = self.logit[-1]
+        logits = self.logits[-1]
         last_action = self.actions[-1]
         reward = self.rewards[-1]
         done = self.dones[-1]
@@ -100,7 +100,7 @@ class Trajectory(object):
 
     def get(self,device):                
         # # 텐서로 변환 및 차원 조정        
-        return self.logit.to(device), self.obs.to(device), self.actions.to(device), self.rewards.to(device), self.dones.to(device) #, self.lstm_hx.to(device)
+        return self.logits.to(device), self.obs.to(device), self.actions.to(device), self.rewards.to(device), self.dones.to(device) #, self.lstm_hx.to(device)
 
     @property
     def length(self):
@@ -116,7 +116,7 @@ def actor(idx, ps, data, args, terminate_event): #, env, args):
     length = args.length
     action_size = args.action_size
     local_network = Network(action_size=action_size)
-    init_core_state = local_network.inital_state()
+    # init_core_state = local_network.inital_state()
     # save_path = args.save_path
     # load_path = args.load_path
     # env.start()
@@ -142,8 +142,12 @@ def actor(idx, ps, data, args, terminate_event): #, env, args):
     while not terminate_event.is_set():
         obs = env.reset()
         # print("Actor: {} Steps: {} Reward: {}".format(idx, steps, rewards))
+        
         with ps.lock:
             local_network.load_state_dict(ps.pull())
+        
+        
+            
         rollout = Trajectory(max_size=length)
         # print("Actor: {} trajectory init".format(idx))
         rollout.actor_id = idx
@@ -195,28 +199,27 @@ def actor(idx, ps, data, args, terminate_event): #, env, args):
                         break
             '''
             # while True:
-            for _ in range(args.length):
-                
+            for _ in range(args.length):                
                 action, logits = local_network.get_policy_and_action(obs)
                 obs, r, is_done = env.step(action)
  
                 total_reward += r
-                
-                # d = False
-                # if r == 1 or r == -1:
-                #     d = True
                 
                 last_action = torch.tensor(action, dtype=torch.int64).view(1, 1)
                 reward = torch.tensor(r, dtype=torch.float32).view(1, 1)
                 done = torch.tensor(is_done, dtype=torch.bool).view(1, 1)
                 rollout.append(obs, last_action, reward, done, logits.detach())                                
                 
-                if is_done:
-                    # obs = env.reset()                    
+                if is_done:                                 
                     break
             
             rollout.finish()
             data.put(rollout)
+            
+            # 새로운 모델 받기
+            # if os.path.exists(args.load_path):
+            #     local_network.cpu()
+            #     local_network.state_dict(torch.load(args.load_path, map_location= torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"), weights_only=True))
             
             if args.verbose == 1:
                 print("Actor: {} put Steps: {} rewards:{}".format(idx, episode, total_reward))
