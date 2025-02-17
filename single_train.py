@@ -54,19 +54,19 @@ if __name__ == '__main__':
                         help="the seed of random, default is 20")
     parser.add_argument("--game_name", type=str, default='breakout',#'CartPole-v1',
                         help="the name of atari game, default is CartPole-v1")
-    parser.add_argument('--length', type=int, default=256,
+    parser.add_argument('--length', type=int, default=20,
                         help='Number of Trajectkories to get from the agent')
     parser.add_argument('--total_steps', type=int, default=80000000,
                         help='Number of steps to run the agent, default is 80000000')
-    parser.add_argument('--batch_size', type=int, default=1,
+    parser.add_argument('--batch_size', type=int, default=16,
                         help='Number of Batch size to set ')
     parser.add_argument("--gamma", type=float, default=0.99,
                         help="the discount factor, default is 0.99")
-    parser.add_argument("--entropy_cost", type=float, default=0.00025,
+    parser.add_argument("--entropy_cost", type=float, default=0.0006,#0.00025,
                         help="Entropy cost/multiplier, default is 0.00025")
     parser.add_argument("--baseline_cost", type=float, default=.5,
                         help="Baseline cost/multiplier, default is 0.5")
-    parser.add_argument("--lr", type=float, default=0.00048,
+    parser.add_argument("--lr", type=float, default=0.0006,#0.00048,
                         help="Learning rate, default is 0.001")
     parser.add_argument("--decay", type=float, default=.99,
                         help="RMSProp optimizer decay, default is .99")
@@ -74,9 +74,9 @@ if __name__ == '__main__':
                         help="RMSProp momentum, default is 0")
     parser.add_argument("--epsilon", type=float, default=0.1,
                         help="RMSProp epsilon, default is 0.1")
-    parser.add_argument("--global_gradient_norm", type=int, default=40,
+    parser.add_argument("--global_gradient_norm", type=int, default=40,#40,
                         help="RMSProp gradient norm, default is 40")
-    parser.add_argument("--verbose", type=int, default=1,
+    parser.add_argument("--verbose", type=int, default=2,
                         help="RMSProp print log flag, default is 0")
     parser.add_argument('--save_path', type=str, default="./model/impala.pt",
                         help='Set the path to save trained model parameters')
